@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   deleteUploadedMaterial,
+  getDeletedMaterialIds,
   getUploadedMaterials,
+  saveDeletedMaterial,
   saveUploadedMaterial,
 } from '../uploadedMaterials'
 
@@ -44,6 +46,10 @@ const materialSections = {
 const emptyUploadedMaterials = {
   presentations: [],
   exercises: [],
+}
+
+function storedMaterialId(category, item) {
+  return `${category}:${item.url}`
 }
 
 function groupUploadedMaterials(materials) {
@@ -160,16 +166,14 @@ function MaterialItem({ item, iconClassName, onDelete }) {
           </span>
         )}
       </a>
-      {item.uploaded && (
-        <button
-          type="button"
-          onClick={() => onDelete(item)}
-          aria-label={`מחק ${item.title}`}
-          className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-slate-300 transition-colors hover:bg-rose-50 hover:text-rose-500 cursor-pointer"
-        >
-          <TrashIcon />
-        </button>
-      )}
+      <button
+        type="button"
+        onClick={() => onDelete(item)}
+        aria-label={`מחק ${item.title}`}
+        className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-slate-300 transition-colors hover:bg-rose-50 hover:text-rose-500 cursor-pointer"
+      >
+        <TrashIcon />
+      </button>
     </div>
   )
 }
@@ -224,6 +228,7 @@ function MaterialSection({
 function MaterialsTab({ courseId, meeting }) {
   const { presentations, exercises } = meeting.materials
   const [uploadedMaterials, setUploadedMaterials] = useState(emptyUploadedMaterials)
+  const [deletedMaterialIds, setDeletedMaterialIds] = useState([])
   const [loadingUploads, setLoadingUploads] = useState(true)
   const [savingCategory, setSavingCategory] = useState(null)
   const [status, setStatus] = useState(null)
@@ -237,7 +242,10 @@ function MaterialsTab({ courseId, meeting }) {
       setLoadingUploads(true)
 
       try {
-        const records = await getUploadedMaterials({ courseId, meetingId: meeting.id })
+        const [records, deletedIds] = await Promise.all([
+          getUploadedMaterials({ courseId, meetingId: meeting.id }),
+          getDeletedMaterialIds({ courseId, meetingId: meeting.id }),
+        ])
 
         if (ignore) return
 
@@ -249,6 +257,7 @@ function MaterialsTab({ courseId, meeting }) {
         })
 
         setUploadedMaterials(groupUploadedMaterials(materials))
+        setDeletedMaterialIds(deletedIds)
       } catch {
         if (!ignore) {
           setStatus({ type: 'error', text: 'שמירת קבצים לא זמינה בדפדפן הזה' })
@@ -311,13 +320,24 @@ function MaterialsTab({ courseId, meeting }) {
     setStatus(null)
 
     try {
-      await deleteUploadedMaterial(item.id)
-      URL.revokeObjectURL(item.url)
-      objectUrlsRef.current.delete(item.url)
-      setUploadedMaterials((current) => ({
-        ...current,
-        [item.category]: current[item.category].filter((material) => material.id !== item.id),
-      }))
+      if (item.uploaded) {
+        await deleteUploadedMaterial(item.id)
+        URL.revokeObjectURL(item.url)
+        objectUrlsRef.current.delete(item.url)
+        setUploadedMaterials((current) => ({
+          ...current,
+          [item.category]: current[item.category].filter((material) => material.id !== item.id),
+        }))
+      } else {
+        await saveDeletedMaterial({
+          courseId,
+          meetingId: meeting.id,
+          category: item.category,
+          materialId: item.id,
+        })
+        setDeletedMaterialIds((current) => [...current, item.id])
+      }
+
       setStatus({ type: 'success', text: 'הקובץ הוסר מהחומרים' })
     } catch {
       setStatus({ type: 'error', text: 'לא הצלחתי למחוק את הקובץ' })
@@ -326,11 +346,15 @@ function MaterialsTab({ courseId, meeting }) {
 
   const sectionItems = {
     presentations: [
-      ...presentations.map((item) => ({ ...item, id: item.url, uploaded: false })),
+      ...presentations
+        .map((item) => ({ ...item, id: storedMaterialId('presentations', item), category: 'presentations', uploaded: false }))
+        .filter((item) => !deletedMaterialIds.includes(item.id)),
       ...uploadedMaterials.presentations,
     ],
     exercises: [
-      ...exercises.map((item) => ({ ...item, id: item.url, uploaded: false })),
+      ...exercises
+        .map((item) => ({ ...item, id: storedMaterialId('exercises', item), category: 'exercises', uploaded: false }))
+        .filter((item) => !deletedMaterialIds.includes(item.id)),
       ...uploadedMaterials.exercises,
     ],
   }

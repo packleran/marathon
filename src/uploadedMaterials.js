@@ -1,6 +1,7 @@
 const DB_NAME = 'marathon-uploaded-materials'
-const DB_VERSION = 1
+const DB_VERSION = 2
 const STORE_NAME = 'materials'
+const DELETED_STORE_NAME = 'deletedMaterials'
 
 function createId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -12,6 +13,10 @@ function createId() {
 
 function meetingKey(courseId, meetingId) {
   return `${courseId}:${meetingId}`
+}
+
+function deletedMaterialKey({ courseId, meetingId, category, materialId }) {
+  return `${meetingKey(courseId, meetingId)}:${category}:${materialId}`
 }
 
 function requestToPromise(request) {
@@ -35,6 +40,11 @@ function openDatabase() {
 
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' })
+        store.createIndex('meetingKey', 'meetingKey', { unique: false })
+      }
+
+      if (!db.objectStoreNames.contains(DELETED_STORE_NAME)) {
+        const store = db.createObjectStore(DELETED_STORE_NAME, { keyPath: 'id' })
         store.createIndex('meetingKey', 'meetingKey', { unique: false })
       }
     }
@@ -91,6 +101,43 @@ export async function deleteUploadedMaterial(id) {
   try {
     const transaction = db.transaction(STORE_NAME, 'readwrite')
     await requestToPromise(transaction.objectStore(STORE_NAME).delete(id))
+  } finally {
+    db.close()
+  }
+}
+
+export async function getDeletedMaterialIds({ courseId, meetingId }) {
+  const db = await openDatabase()
+
+  try {
+    const transaction = db.transaction(DELETED_STORE_NAME, 'readonly')
+    const store = transaction.objectStore(DELETED_STORE_NAME)
+    const index = store.index('meetingKey')
+    const records = await requestToPromise(index.getAll(meetingKey(courseId, meetingId)))
+
+    return records.map((record) => record.materialId)
+  } finally {
+    db.close()
+  }
+}
+
+export async function saveDeletedMaterial({ courseId, meetingId, category, materialId }) {
+  const record = {
+    id: deletedMaterialKey({ courseId, meetingId, category, materialId }),
+    meetingKey: meetingKey(courseId, meetingId),
+    courseId,
+    meetingId: String(meetingId),
+    category,
+    materialId,
+    deletedAt: new Date().toISOString(),
+  }
+
+  const db = await openDatabase()
+
+  try {
+    const transaction = db.transaction(DELETED_STORE_NAME, 'readwrite')
+    await requestToPromise(transaction.objectStore(DELETED_STORE_NAME).put(record))
+    return record
   } finally {
     db.close()
   }
