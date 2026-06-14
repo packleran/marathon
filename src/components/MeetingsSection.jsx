@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { meetings } from '../data'
 import MeetingDetail from './MeetingDetail'
 
 function statusLabel(date) {
@@ -12,12 +11,12 @@ function statusLabel(date) {
   return { text: 'קרוב', color: 'bg-sky-50 text-sky-600 ring-1 ring-sky-200/60' }
 }
 
-export default function MeetingsSection() {
+export default function MeetingsSection({ course }) {
   const [expandedId, setExpandedId] = useState(null)
 
   return (
     <div className="space-y-4">
-      {meetings.map((m, i) => {
+      {course.meetings.map((m, i) => {
         const isExpanded = expandedId === m.id
         const status = statusLabel(m.date)
 

@@ -1,175 +1,308 @@
-export const courseInfo = {
-  name: 'מרתון מתמטיקה מתקדמת',
-  subtitle: 'שיעורי תגבור לקראת מבחן סוף סמסטר | סמסטר ב׳ 2026',
-  nextSession: '2026-06-18T18:00:00',
-}
-
-export const meetings = [
+export const courses = [
   {
-    id: 1,
-    date: '2026-06-18',
-    dateDisplay: '18 ביוני',
-    day: 'יום חמישי',
-    time: '18:00–21:00',
-    location: 'חדר 205, בניין הנדסה',
-    type: 'in-person',
-    title: 'חזרה על פרקים 1-3',
-    description: 'סקירה מקיפה של יסודות הקורס — מרחבים וקטוריים, מטריצות, ודטרמיננטות. נפתור תרגילים מרכזיים מכל פרק.',
-    status: 'upcoming',
-    topics: ['מרחבים וקטוריים', 'מטריצות והעתקות', 'דטרמיננטות'],
-    materials: {
-      presentations: [
-        { title: 'מצגת חזרה — פרקים 1-3', url: '#' },
-        { title: 'דף נוסחאות מרוכז', url: '#' },
-      ],
-      exercises: [
-        { title: 'דף תרגול #1 — מרחבים וקטוריים', url: '#' },
-        { title: 'דף תרגול #2 — מטריצות', url: '#' },
-        { title: 'דף תרגול #3 — דטרמיננטות', url: '#' },
-      ],
-      questions: [
-        { question: 'מה ההבדל בין בסיס לקבוצה פורשת?', answer: 'בסיס הוא קבוצה פורשת שהיא גם בלתי תלויה לינארית — כלומר אין בה וקטורים מיותרים.' },
-        { question: 'איך מוצאים ערכים עצמיים?', answer: 'פותרים את המשוואה det(A - λI) = 0, כלומר מוצאים את שורשי הפולינום האופייני.' },
-      ],
-    },
+    id: 'algorithms',
+    name: 'תכנון אלגוריתמים',
+    icon: '{}',
+    color: 'sky',
+    subtitle: 'מרתון הכנה למבחן — סמסטר ב׳ 2026',
+    nextSession: '2026-06-18T18:00:00',
+    meetings: [
+      {
+        id: 1,
+        dateDisplay: '18 ביוני',
+        day: 'יום חמישי',
+        time: '18:00–21:00',
+        date: '2026-06-18',
+        location: 'חדר 205, בניין הנדסה',
+        type: 'in-person',
+        title: 'חזרה על Divide & Conquer ותכנון דינמי',
+        description: 'סקירה מקיפה של טכניקות הפרד ומשול, תכנון דינמי קלאסי — Knapsack, LCS, ועוד. נפתור תרגילים מבחינות קודמות.',
+        topics: ['הפרד ומשול', 'תכנון דינמי', 'Knapsack & LCS'],
+        materials: {
+          presentations: [
+            { title: 'מצגת — Divide & Conquer', url: '#' },
+            { title: 'מצגת — תכנון דינמי', url: '#' },
+          ],
+          exercises: [
+            { title: 'דף תרגול — תכנון דינמי', url: '#' },
+            { title: 'שאלות בחינה — D&C', url: '#' },
+          ],
+          questions: [
+            { question: 'מה ההבדל בין Memoization ל-Tabulation?', answer: 'Memoization הוא גישה מלמעלה למטה (Top-Down) עם רקורסיה וזיכרון, בעוד Tabulation הוא גישה מלמטה למעלה (Bottom-Up) עם טבלה.' },
+            { question: 'איך מזהים בעיה שמתאימה לתכנון דינמי?', answer: 'שני תנאים: (1) תת-מבנה אופטימלי — הפתרון האופטימלי מורכב מפתרונות אופטימליים לתתי-בעיות, (2) תתי-בעיות חופפות — אותן תתי-בעיות נפתרות שוב ושוב.' },
+          ],
+        },
+      },
+      {
+        id: 2,
+        dateDisplay: '22 ביוני',
+        day: 'יום ראשון',
+        time: '18:00–21:00',
+        date: '2026-06-22',
+        location: 'זום — קישור בקבוצה',
+        type: 'zoom',
+        title: 'אלגוריתמי גרפים ו-NP-Completeness',
+        description: 'BFS, DFS, Dijkstra, Bellman-Ford. מעבר ל-NP, רדוקציות, והוכחות NP-שלמות.',
+        topics: ['אלגוריתמי גרפים', 'NP-Completeness', 'רדוקציות'],
+        materials: {
+          presentations: [
+            { title: 'מצגת — גרפים ואלגוריתמים', url: '#' },
+          ],
+          exercises: [
+            { title: 'דף תרגול — גרפים', url: '#' },
+            { title: 'דף תרגול — NP-שלמות', url: '#' },
+          ],
+          questions: [
+            { question: 'איך מוכיחים ש-בעיה היא NP-Complete?', answer: 'שני שלבים: (1) להוכיח שהבעיה ב-NP — קיים מוודא פולינומי, (2) לבצע רדוקציה מבעיה NP-Complete ידועה אליה.' },
+          ],
+        },
+      },
+      {
+        id: 3,
+        dateDisplay: '25 ביוני',
+        day: 'יום חמישי',
+        time: '18:00–21:00',
+        date: '2026-06-25',
+        location: 'חדר 205, בניין הנדסה',
+        type: 'in-person',
+        title: 'פתרון בחינות קודמות',
+        description: 'פתרון מלא ומפורט של בחינת 2025א ו-2025ב. שאלה-שאלה עם דגשים וטיפים.',
+        topics: ['בחינה 2025א', 'בחינה 2025ב', 'טיפים למבחן'],
+        materials: {
+          presentations: [],
+          exercises: [
+            { title: 'בחינה 2025א — שאלון', url: '#' },
+            { title: 'בחינה 2025א — פתרון', url: '#' },
+            { title: 'בחינה 2025ב — שאלון', url: '#' },
+            { title: 'בחינה 2025ב — פתרון', url: '#' },
+          ],
+          questions: [],
+        },
+      },
+      {
+        id: 4,
+        dateDisplay: '29 ביוני',
+        day: 'יום ראשון',
+        time: '17:00–21:00',
+        date: '2026-06-29',
+        location: 'חדר 205, בניין הנדסה',
+        type: 'in-person',
+        title: 'מרתון סיכום כללי',
+        description: 'חזרה סופית על כל הנושאים, שאלות פתוחות, טיפים אחרונים ותרגול אינטנסיבי.',
+        topics: ['חזרה כללית', 'שאלות פתוחות', 'אסטרטגיית מבחן'],
+        materials: {
+          presentations: [
+            { title: 'סיכום כללי — כל הנושאים', url: '#' },
+            { title: 'נוסחאון סופי', url: '#' },
+          ],
+          exercises: [
+            { title: 'תרגיל סיכום מקיף', url: '#' },
+          ],
+          questions: [],
+        },
+      },
+    ],
+    recordings: [
+      { id: 1, title: 'תכנון דינמי — Knapsack ו-LCS', date: '11 ביוני', duration: '2:34:00' },
+      { id: 2, title: 'Divide & Conquer — תרגול', date: '8 ביוני', duration: '1:52:00' },
+      { id: 3, title: 'פתרון בחינה 2025א — חלק א׳', date: '4 ביוני', duration: '2:10:00' },
+    ],
+    deadlines: [
+      { id: 1, label: 'מועד א׳', date: '2026-07-10', display: '10 ביולי' },
+      { id: 2, label: 'מועד ב׳', date: '2026-08-07', display: '7 באוגוסט' },
+      { id: 3, label: 'הגשת תרגיל 5', date: '2026-06-20', display: '20 ביוני' },
+    ],
+    resources: [
+      { id: 1, title: 'תיקיית חומרים — Drive', description: 'סיכומים ותרגולים', icon: 'folder', url: '#' },
+      { id: 2, title: 'אינדקס פתרונות בחינות', description: 'פתרונות 2020–2025', icon: 'pdf', url: '#' },
+      { id: 3, title: 'פורום שאלות — דיסקורד', description: 'שאלות ודיונים', icon: 'link', url: '#' },
+    ],
   },
   {
-    id: 2,
-    date: '2026-06-21',
-    dateDisplay: '21 ביוני',
-    day: 'יום ראשון',
-    time: '18:00–21:00',
-    location: 'זום — קישור בקבוצה',
-    type: 'zoom',
-    title: 'פרקים 4-6 + תרגול',
-    description: 'נושאים מתקדמים — אינטגרלים כפולים ומשולשים, משפט גרין, ומשוואות דיפרנציאליות מסדר ראשון.',
-    status: 'upcoming',
-    topics: ['אינטגרלים כפולים', 'משפט גרין', 'מד"ר מסדר ראשון'],
-    materials: {
-      presentations: [
-        { title: 'מצגת — אינטגרלים כפולים ומשולשים', url: '#' },
-      ],
-      exercises: [
-        { title: 'דף תרגול #4 — אינטגרלים כפולים', url: '#' },
-        { title: 'דף תרגול #5 — מד"ר', url: '#' },
-      ],
-      questions: [
-        { question: 'מתי משתמשים בקואורדינטות פולריות?', answer: 'כשהתחום הוא מעגלי או חלק ממעגל, או כשהפונקציה מכילה x²+y².' },
-      ],
-    },
+    id: 'probability',
+    name: 'מבוא להסתברות',
+    icon: '%',
+    color: 'violet',
+    subtitle: 'מרתון הכנה למבחן — סמסטר ב׳ 2026',
+    nextSession: '2026-06-19T16:00:00',
+    meetings: [
+      {
+        id: 1,
+        dateDisplay: '19 ביוני',
+        day: 'יום שישי',
+        time: '16:00–19:00',
+        date: '2026-06-19',
+        location: 'חדר 301, בניין מדעים',
+        type: 'in-person',
+        title: 'הסתברות בסיסית ומשתנים מקריים',
+        description: 'חזרה על אקסיומות ההסתברות, הסתברות מותנית, נוסחת בייס, משתנים מקריים בדידים.',
+        topics: ['אקסיומות הסתברות', 'הסתברות מותנית', 'בייס', 'משתנים בדידים'],
+        materials: {
+          presentations: [
+            { title: 'מצגת — הסתברות בסיסית', url: '#' },
+            { title: 'מצגת — משתנים מקריים', url: '#' },
+          ],
+          exercises: [
+            { title: 'דף תרגול — הסתברות מותנית', url: '#' },
+            { title: 'דף תרגול — בייס', url: '#' },
+          ],
+          questions: [
+            { question: 'מתי משתמשים בנוסחת בייס?', answer: 'כשרוצים "להפוך" הסתברות מותנית — למשל, ידוע P(B|A) ורוצים P(A|B). נפוץ בבעיות אבחון ובדיקות.' },
+          ],
+        },
+      },
+      {
+        id: 2,
+        dateDisplay: '22 ביוני',
+        day: 'יום ראשון',
+        time: '16:00–19:00',
+        date: '2026-06-22',
+        location: 'זום — קישור בקבוצה',
+        type: 'zoom',
+        title: 'התפלגויות רציפות ומשפט הגבול המרכזי',
+        description: 'התפלגות נורמלית, אחידה, מעריכית. משפט הגבול המרכזי ושימושים.',
+        topics: ['התפלגות נורמלית', 'התפלגויות רציפות', 'CLT'],
+        materials: {
+          presentations: [
+            { title: 'מצגת — התפלגויות רציפות', url: '#' },
+          ],
+          exercises: [
+            { title: 'דף תרגול — נורמלית ו-CLT', url: '#' },
+          ],
+          questions: [],
+        },
+      },
+      {
+        id: 3,
+        dateDisplay: '26 ביוני',
+        day: 'יום שישי',
+        time: '16:00–19:00',
+        date: '2026-06-26',
+        location: 'חדר 301, בניין מדעים',
+        type: 'in-person',
+        title: 'פתרון בחינות + סיכום',
+        description: 'פתרון בחינות קודמות, חזרה סופית וטיפים למבחן.',
+        topics: ['בחינה 2025א', 'בחינה 2024ב', 'סיכום כללי'],
+        materials: {
+          presentations: [],
+          exercises: [
+            { title: 'בחינה 2025א — שאלון + פתרון', url: '#' },
+            { title: 'בחינה 2024ב — שאלון + פתרון', url: '#' },
+          ],
+          questions: [],
+        },
+      },
+    ],
+    recordings: [
+      { id: 1, title: 'הסתברות מותנית ובייס — תרגול', date: '12 ביוני', duration: '1:48:00' },
+      { id: 2, title: 'משתנים מקריים בדידים', date: '9 ביוני', duration: '2:05:00' },
+    ],
+    deadlines: [
+      { id: 1, label: 'מועד א׳', date: '2026-07-06', display: '6 ביולי' },
+      { id: 2, label: 'מועד ב׳', date: '2026-08-03', display: '3 באוגוסט' },
+    ],
+    resources: [
+      { id: 1, title: 'תיקיית חומרים — Drive', description: 'סיכומים וטבלאות', icon: 'folder', url: '#' },
+      { id: 2, title: 'טבלת התפלגות נורמלית', description: 'PDF להדפסה', icon: 'pdf', url: '#' },
+      { id: 3, title: 'קבוצת וואטסאפ', description: 'שאלות ותיאומים', icon: 'link', url: '#' },
+    ],
   },
   {
-    id: 3,
-    date: '2026-06-25',
-    dateDisplay: '25 ביוני',
-    day: 'יום חמישי',
-    time: '18:00–21:00',
-    location: 'חדר 205, בניין הנדסה',
-    type: 'in-person',
-    title: 'פתרון בחינות קודמות',
-    description: 'פתרון מלא ומפורט של בחינת 2025א ו-2025ב. נעבור שאלה-שאלה עם טיפים לניהול זמן במבחן.',
-    status: 'upcoming',
-    topics: ['בחינה 2025א', 'בחינה 2025ב', 'טיפים למבחן'],
-    materials: {
-      presentations: [],
-      exercises: [
-        { title: 'בחינה 2025א — שאלון', url: '#' },
-        { title: 'בחינה 2025א — פתרון', url: '#' },
-        { title: 'בחינה 2025ב — שאלון', url: '#' },
-        { title: 'בחינה 2025ב — פתרון', url: '#' },
-      ],
-      questions: [],
-    },
-  },
-  {
-    id: 4,
-    date: '2026-06-28',
-    dateDisplay: '28 ביוני',
-    day: 'יום ראשון',
-    time: '17:00–21:00',
-    location: 'חדר 205, בניין הנדסה',
-    type: 'in-person',
-    title: 'מרתון סיכום כללי',
-    description: 'מפגש אחרון — חזרה סופית על כל הנושאים, שאלות פתוחות, טיפים אחרונים, ותרגול אינטנסיבי.',
-    status: 'upcoming',
-    topics: ['חזרה כללית', 'שאלות פתוחות', 'טיפים למבחן'],
-    materials: {
-      presentations: [
-        { title: 'סיכום כללי — כל הנושאים', url: '#' },
-        { title: 'נוסחאון סופי', url: '#' },
-      ],
-      exercises: [
-        { title: 'תרגיל סיכום מקיף', url: '#' },
-      ],
-      questions: [],
-    },
-  },
-]
-
-export const recordings = [
-  {
-    id: 1,
-    title: 'חזרה על אלגברה לינארית — לכסון ומרחבים',
-    date: '11 ביוני',
-    duration: '2:34:00',
-    meetingId: 1,
-  },
-  {
-    id: 2,
-    title: 'אינטגרלים כפולים — תרגול מודרך',
-    date: '8 ביוני',
-    duration: '1:52:00',
-    meetingId: 2,
-  },
-  {
-    id: 3,
-    title: 'פתרון בחינה 2025א — חלק א׳',
-    date: '4 ביוני',
-    duration: '2:10:00',
-    meetingId: 3,
-  },
-  {
-    id: 4,
-    title: 'מד"ר מסדר שני — שיטות פתרון',
-    date: '1 ביוני',
-    duration: '1:45:00',
-    meetingId: 2,
-  },
-]
-
-export const deadlines = [
-  { id: 1, label: 'מועד א׳', date: '2026-07-08', display: '8 ביולי' },
-  { id: 2, label: 'מועד ב׳', date: '2026-08-05', display: '5 באוגוסט' },
-  { id: 3, label: 'הגשת תרגיל אחרון', date: '2026-06-22', display: '22 ביוני' },
-]
-
-export const resources = [
-  {
-    id: 1,
-    title: 'תיקיית חומרים — Google Drive',
-    description: 'סיכומים, דפי נוסחאות ותרגולים',
-    icon: 'folder',
-    url: '#',
-  },
-  {
-    id: 2,
-    title: 'אינדקס פתרונות בחינות',
-    description: 'פתרונות מלאים 2020–2025',
-    icon: 'pdf',
-    url: '#',
-  },
-  {
-    id: 3,
-    title: 'פורום שאלות — דיסקורד',
-    description: 'שאלו כל דבר, ענו אחד לשני',
-    icon: 'link',
-    url: '#',
-  },
-  {
-    id: 4,
-    title: 'דף נוסחאות מותר בבחינה',
-    description: 'הגרסה המעודכנת — PDF',
-    icon: 'pdf',
-    url: '#',
+    id: 'computational',
+    name: 'מודלים חישוביים',
+    icon: 'M',
+    color: 'emerald',
+    subtitle: 'מרתון הכנה למבחן — סמסטר ב׳ 2026',
+    nextSession: '2026-06-20T18:00:00',
+    meetings: [
+      {
+        id: 1,
+        dateDisplay: '20 ביוני',
+        day: 'יום שבת',
+        time: '18:00–21:00',
+        date: '2026-06-20',
+        location: 'חדר 101, בניין מדעי המחשב',
+        type: 'in-person',
+        title: 'שפות רגולריות ואוטומטים',
+        description: 'DFA, NFA, ביטויים רגולריים, למת הניפוח לשפות רגולריות. תרגול המרות ובניית אוטומטים.',
+        topics: ['DFA & NFA', 'ביטויים רגולריים', 'למת הניפוח'],
+        materials: {
+          presentations: [
+            { title: 'מצגת — אוטומטים ושפות רגולריות', url: '#' },
+          ],
+          exercises: [
+            { title: 'דף תרגול — בניית DFA/NFA', url: '#' },
+            { title: 'דף תרגול — למת הניפוח', url: '#' },
+          ],
+          questions: [
+            { question: 'מה ההבדל בין DFA ל-NFA?', answer: 'ב-DFA יש בדיוק מעבר אחד מכל מצב לכל אות, בעוד ב-NFA יכולים להיות מספר מעברים (או אפס) לכל אות, כולל מעברי אפסילון.' },
+            { question: 'איך משתמשים בלמת הניפוח?', answer: 'משתמשים בה כדי להוכיח ששפה אינה רגולרית. בוחרים מילה מתאימה ומראים שכל חלוקה לפי הלמה מובילה לסתירה.' },
+          ],
+        },
+      },
+      {
+        id: 2,
+        dateDisplay: '24 ביוני',
+        day: 'יום רביעי',
+        time: '18:00–21:00',
+        date: '2026-06-24',
+        location: 'חדר 101, בניין מדעי המחשב',
+        type: 'in-person',
+        title: 'שפות חסרות הקשר ומכונות טיורינג',
+        description: 'דקדוקים חסרי הקשר, PDA, מכונות טיורינג, אי-כריעות ובעיית העצירה.',
+        topics: ['CFG & PDA', 'מכונות טיורינג', 'אי-כריעות'],
+        materials: {
+          presentations: [
+            { title: 'מצגת — CFL ו-PDA', url: '#' },
+            { title: 'מצגת — מכונות טיורינג', url: '#' },
+          ],
+          exercises: [
+            { title: 'דף תרגול — דקדוקים ו-PDA', url: '#' },
+            { title: 'דף תרגול — טיורינג ואי-כריעות', url: '#' },
+          ],
+          questions: [
+            { question: 'למה בעיית העצירה אינה כריעה?', answer: 'הוכחה באמצעות דיאגונליזציה — מניחים שקיימת מכונה שפותרת את הבעיה ובונים מכונה שיוצרת סתירה.' },
+          ],
+        },
+      },
+      {
+        id: 3,
+        dateDisplay: '27 ביוני',
+        day: 'יום שבת',
+        time: '17:00–21:00',
+        date: '2026-06-27',
+        location: 'חדר 101, בניין מדעי המחשב',
+        type: 'in-person',
+        title: 'פתרון בחינות + מרתון סיכום',
+        description: 'פתרון בחינות קודמות, סיכום כל החומר, שאלות ותרגול אחרון.',
+        topics: ['בחינות קודמות', 'חזרה כללית', 'טיפים למבחן'],
+        materials: {
+          presentations: [
+            { title: 'סיכום כללי — כל הנושאים', url: '#' },
+          ],
+          exercises: [
+            { title: 'בחינה 2025א — שאלון + פתרון', url: '#' },
+            { title: 'בחינה 2025ב — שאלון + פתרון', url: '#' },
+            { title: 'תרגיל סיכום מקיף', url: '#' },
+          ],
+          questions: [],
+        },
+      },
+    ],
+    recordings: [
+      { id: 1, title: 'אוטומטים — DFA, NFA והמרות', date: '13 ביוני', duration: '2:20:00' },
+      { id: 2, title: 'למת הניפוח — דוגמאות ותרגול', date: '10 ביוני', duration: '1:35:00' },
+      { id: 3, title: 'מכונות טיורינג — מבוא', date: '6 ביוני', duration: '1:55:00' },
+    ],
+    deadlines: [
+      { id: 1, label: 'מועד א׳', date: '2026-07-12', display: '12 ביולי' },
+      { id: 2, label: 'מועד ב׳', date: '2026-08-09', display: '9 באוגוסט' },
+      { id: 3, label: 'הגשת תרגיל אחרון', date: '2026-06-23', display: '23 ביוני' },
+    ],
+    resources: [
+      { id: 1, title: 'תיקיית חומרים — Drive', description: 'סיכומים ודפי עבודה', icon: 'folder', url: '#' },
+      { id: 2, title: 'סימולטור אוטומטים', description: 'כלי אינטראקטיבי', icon: 'link', url: '#' },
+      { id: 3, title: 'אינדקס פתרונות בחינות', description: 'פתרונות 2020–2025', icon: 'pdf', url: '#' },
+    ],
   },
 ]
