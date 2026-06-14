@@ -164,7 +164,7 @@ export async function getMeetingRequests({ courseId, meetingId }) {
   }
 }
 
-export async function saveMeetingRequest({ courseId, meetingId, text, reviewInClass }) {
+export async function saveMeetingRequest({ courseId, meetingId, text, reviewInClass, file }) {
   const record = {
     id: `${meetingKey(courseId, meetingId)}:request:${createId()}`,
     meetingKey: meetingKey(courseId, meetingId),
@@ -172,6 +172,10 @@ export async function saveMeetingRequest({ courseId, meetingId, text, reviewInCl
     meetingId: String(meetingId),
     text,
     reviewInClass,
+    fileName: file?.name ?? '',
+    fileType: file?.type ?? '',
+    fileSize: file?.size ?? 0,
+    blob: file ?? null,
     createdAt: new Date().toISOString(),
   }
 

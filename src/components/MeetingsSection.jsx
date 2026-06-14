@@ -11,7 +11,7 @@ function statusLabel(date) {
   return { text: 'קרוב', color: 'bg-sky-50 text-sky-600 ring-1 ring-sky-200/60' }
 }
 
-export default function MeetingsSection({ course }) {
+export default function MeetingsSection({ course, onUpdateMeeting }) {
   const [expandedId, setExpandedId] = useState(null)
 
   return (
@@ -92,7 +92,13 @@ export default function MeetingsSection({ course }) {
                 </div>
               </button>
 
-              {isExpanded && <MeetingDetail courseId={course.id} meeting={m} />}
+              {isExpanded && (
+                <MeetingDetail
+                  courseId={course.id}
+                  meeting={m}
+                  onUpdateMeeting={(updates) => onUpdateMeeting(course.id, m.id, updates)}
+                />
+              )}
             </div>
           </div>
         )
