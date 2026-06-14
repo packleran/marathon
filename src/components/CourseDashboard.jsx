@@ -5,7 +5,10 @@ import RecordingsSection from './RecordingsSection'
 import Sidebar from './Sidebar'
 import { courses } from '../data'
 import {
+  addCustomCourseOverride,
   applyContentOverrides,
+  createDuplicatedCourse,
+  deleteMeetingOverride,
   loadContentOverrides,
   persistContentOverrides,
   updateCourseOverride,
@@ -36,7 +39,16 @@ function toDatetimeLocal(value) {
   return value ? value.slice(0, 16) : ''
 }
 
-function CourseEditor({ course, onSave }) {
+function DuplicateIcon() {
+  return (
+    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.7">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 8.25h10.5v10.5H8.25z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 15.75V5.25h10.5" />
+    </svg>
+  )
+}
+
+function CourseEditor({ course, onSave, onDuplicate }) {
   const [form, setForm] = useState({
     name: course.name,
     subtitle: course.subtitle,
@@ -92,6 +104,14 @@ function CourseEditor({ course, onSave }) {
         <button type="submit" className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white shadow-sm shadow-sky-200 transition-colors hover:bg-sky-700 cursor-pointer">
           שמור פרטי קורס
         </button>
+        <button
+          type="button"
+          onClick={onDuplicate}
+          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 shadow-sm transition-colors hover:border-sky-200 hover:text-sky-600 cursor-pointer"
+        >
+          <DuplicateIcon />
+          שכפל טאב לקבוצה נוספת
+        </button>
         {status && <span className="text-xs text-emerald-600">{status}</span>}
       </div>
     </form>
@@ -107,8 +127,8 @@ export default function CourseDashboard() {
     () => applyContentOverrides(courses, contentOverrides),
     [contentOverrides],
   )
-  const course = editableCourses.find((c) => c.id === activeCourseId)
-  const styles = colorStyles[course.color]
+  const course = editableCourses.find((c) => c.id === activeCourseId) ?? editableCourses[0]
+  const styles = colorStyles[course.color] ?? colorStyles.sky
 
   function saveOverrides(update) {
     setContentOverrides((current) => {
@@ -124,6 +144,18 @@ export default function CourseDashboard() {
 
   function handleUpdateMeeting(courseId, meetingId, updates) {
     saveOverrides((current) => updateMeetingOverride(current, courseId, meetingId, updates))
+  }
+
+  function handleDeleteMeeting(courseId, meetingId) {
+    saveOverrides((current) => deleteMeetingOverride(current, courseId, meetingId))
+  }
+
+  function handleDuplicateCourse(sourceCourse) {
+    const duplicatedCourse = createDuplicatedCourse(sourceCourse)
+
+    saveOverrides((current) => addCustomCourseOverride(current, duplicatedCourse))
+    setActiveCourseId(duplicatedCourse.id)
+    setActiveContent('meetings')
   }
 
   return (
@@ -171,6 +203,7 @@ export default function CourseDashboard() {
             key={course.id}
             course={course}
             onSave={(updates) => handleUpdateCourse(course.id, updates)}
+            onDuplicate={() => handleDuplicateCourse(course)}
           />
         )}
 
@@ -179,6 +212,7 @@ export default function CourseDashboard() {
             {activeContent === 'meetings' && (
               <MeetingsSection
                 course={course}
+                onDeleteMeeting={handleDeleteMeeting}
                 onUpdateMeeting={handleUpdateMeeting}
               />
             )}

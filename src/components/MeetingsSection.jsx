@@ -11,8 +11,29 @@ function statusLabel(date) {
   return { text: 'קרוב', color: 'bg-sky-50 text-sky-600 ring-1 ring-sky-200/60' }
 }
 
-export default function MeetingsSection({ course, onUpdateMeeting }) {
+function TrashIcon() {
+  return (
+    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166M18.16 5.79L17.22 19.67A2.25 2.25 0 0114.977 21H9.023a2.25 2.25 0 01-2.243-2.33L5.84 5.79m12.32 0a48.108 48.108 0 00-3.478-.397m-12.56.563c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.16 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+    </svg>
+  )
+}
+
+export default function MeetingsSection({ course, onDeleteMeeting, onUpdateMeeting }) {
   const [expandedId, setExpandedId] = useState(null)
+
+  function handleDeleteMeeting(meetingId) {
+    setExpandedId((current) => (current === meetingId ? null : current))
+    onDeleteMeeting(course.id, meetingId)
+  }
+
+  if (course.meetings.length === 0) {
+    return (
+      <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-5 py-8 text-center text-sm text-slate-400">
+        אין מפגשים בטאב הזה
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-4">
@@ -30,15 +51,15 @@ export default function MeetingsSection({ course, onUpdateMeeting }) {
               className={`rounded-2xl bg-white border transition-all duration-300 ${
                 isExpanded
                   ? 'border-sky-200 shadow-[0_4px_24px_rgba(14,165,233,0.08)] ring-1 ring-sky-100'
-                  : 'border-slate-100 shadow-[0_1px_3px_rgba(0,0,0,0.04)] hover:shadow-[0_2px_12px_rgba(0,0,0,0.06)] hover:border-slate-200'
+                : 'border-slate-100 shadow-[0_1px_3px_rgba(0,0,0,0.04)] hover:shadow-[0_2px_12px_rgba(0,0,0,0.06)] hover:border-slate-200'
               }`}
             >
-              <button
-                onClick={() => setExpandedId(isExpanded ? null : m.id)}
-                className="w-full text-right p-5 md:p-6 cursor-pointer"
-              >
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex items-start gap-4 min-w-0">
+              <div className="flex items-start justify-between gap-4 p-5 md:p-6">
+                <button
+                  type="button"
+                  onClick={() => setExpandedId(isExpanded ? null : m.id)}
+                  className="flex min-w-0 flex-1 items-start gap-4 text-right cursor-pointer"
+                >
                     <div className={`flex-shrink-0 flex h-11 w-11 items-center justify-center rounded-xl font-bold text-sm ${
                       isExpanded
                         ? 'bg-gradient-to-br from-sky-500 to-blue-600 text-white shadow-sm shadow-sky-200'
@@ -77,20 +98,38 @@ export default function MeetingsSection({ course, onUpdateMeeting }) {
                         </span>
                       </div>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-3 flex-shrink-0">
-                    <span className={`hidden sm:inline-flex rounded-full px-2.5 py-1 text-[11px] font-medium ${status.color}`}>
-                      {status.text}
-                    </span>
+                </button>
+                <div className="flex flex-shrink-0 items-center gap-2">
+                  <span className={`hidden sm:inline-flex rounded-full px-2.5 py-1 text-[11px] font-medium ${status.color}`}>
+                    {status.text}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteMeeting(m.id)}
+                    aria-label={`מחק את ${m.title}`}
+                    title="מחק מפגש"
+                    className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-300 transition-colors hover:bg-rose-50 hover:text-rose-500 cursor-pointer"
+                  >
+                    <TrashIcon />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setExpandedId(isExpanded ? null : m.id)}
+                    aria-label={isExpanded ? 'סגור מפגש' : 'פתח מפגש'}
+                    className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-300 transition-colors hover:bg-slate-50 hover:text-slate-500 cursor-pointer"
+                  >
                     <svg
-                      className={`h-5 w-5 text-slate-300 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`}
-                      fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"
+                      className={`h-5 w-5 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`}
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth="2"
                     >
                       <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
                     </svg>
-                  </div>
+                  </button>
                 </div>
-              </button>
+              </div>
 
               {isExpanded && (
                 <MeetingDetail
