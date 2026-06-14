@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 
-function getTimeLeft(target) {
-  const diff = new Date(target) - new Date()
+function getTimeLeft(target, now = new Date()) {
+  const diff = new Date(target) - now
   if (diff <= 0) return null
   return {
     days: Math.floor(diff / (1000 * 60 * 60 * 24)),
@@ -35,13 +35,14 @@ const iconMap = {
 }
 
 export default function Sidebar({ course }) {
-  const [timeLeft, setTimeLeft] = useState(getTimeLeft(course.nextSession))
+  const [now, setNow] = useState(() => new Date())
 
   useEffect(() => {
-    setTimeLeft(getTimeLeft(course.nextSession))
-    const timer = setInterval(() => setTimeLeft(getTimeLeft(course.nextSession)), 1000)
+    const timer = setInterval(() => setNow(new Date()), 1000)
     return () => clearInterval(timer)
-  }, [course.nextSession])
+  }, [])
+
+  const timeLeft = getTimeLeft(course.nextSession, now)
 
   return (
     <div className="w-full lg:w-80 flex-shrink-0 space-y-4">

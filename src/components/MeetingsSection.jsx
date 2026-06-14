@@ -92,7 +92,7 @@ export default function MeetingsSection({ course }) {
                 </div>
               </button>
 
-              {isExpanded && <MeetingDetail meeting={m} />}
+              {isExpanded && <MeetingDetail courseId={course.id} meeting={m} />}
             </div>
           </div>
         )

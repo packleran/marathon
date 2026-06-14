@@ -19,13 +19,11 @@ export const courses = [
         description: 'חזרה על אלגוריתמים חמדניים ותכנון דינמי, כולל זיהוי מבנה הבעיה, הוכחת נכונות, ובניית פתרונות יעילים לתרגילי מבחן.',
         topics: ['אלגוריתמים חמדניים', 'תכנון דינמי', 'הוכחות נכונות'],
         materials: {
-          presentations: [
-            { title: 'מצגת — אלגוריתמים חמדניים', url: '#' },
-            { title: 'מצגת — תכנון דינמי', url: '#' },
-          ],
+          presentations: [],
           exercises: [
-            { title: 'דף תרגול — אלגוריתמים חמדניים', url: '#' },
-            { title: 'דף תרגול — תכנון דינמי', url: '#' },
+            { title: 'תכנון דינמי — פרוטוקול 4 השלבים', url: '/חומרים/תכנון%20דינמי/פרוטוקול%204%20השלבים%20לתכנון%20דינמי.pdf' },
+            { title: 'חמדן — Greedy Algorithms: Exchange Argument', url: '/חומרים/חמדן/Greedy%20Algorithms%20-%20Exchange%20Argument.pdf' },
+            { title: 'חמדן — Fractional Knapsack Proof', url: '/חומרים/חמדן/Fractional%20Knapsack%20Proof.pdf' },
           ],
           questions: [
             { question: 'איך מוכיחים שאלגוריתם חמדני נכון?', answer: 'בדרך כלל משתמשים בטיעון החלפה או באינדוקציה שמראה שבכל צעד הבחירה החמדנית יכולה להופיע בפתרון אופטימלי.' },
