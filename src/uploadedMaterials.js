@@ -1,7 +1,8 @@
 const DB_NAME = 'marathon-uploaded-materials'
-const DB_VERSION = 2
+const DB_VERSION = 3
 const STORE_NAME = 'materials'
 const DELETED_STORE_NAME = 'deletedMaterials'
+const REQUESTS_STORE_NAME = 'meetingRequests'
 
 function createId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -45,6 +46,11 @@ function openDatabase() {
 
       if (!db.objectStoreNames.contains(DELETED_STORE_NAME)) {
         const store = db.createObjectStore(DELETED_STORE_NAME, { keyPath: 'id' })
+        store.createIndex('meetingKey', 'meetingKey', { unique: false })
+      }
+
+      if (!db.objectStoreNames.contains(REQUESTS_STORE_NAME)) {
+        const store = db.createObjectStore(REQUESTS_STORE_NAME, { keyPath: 'id' })
         store.createIndex('meetingKey', 'meetingKey', { unique: false })
       }
     }
@@ -138,6 +144,54 @@ export async function saveDeletedMaterial({ courseId, meetingId, category, mater
     const transaction = db.transaction(DELETED_STORE_NAME, 'readwrite')
     await requestToPromise(transaction.objectStore(DELETED_STORE_NAME).put(record))
     return record
+  } finally {
+    db.close()
+  }
+}
+
+export async function getMeetingRequests({ courseId, meetingId }) {
+  const db = await openDatabase()
+
+  try {
+    const transaction = db.transaction(REQUESTS_STORE_NAME, 'readonly')
+    const store = transaction.objectStore(REQUESTS_STORE_NAME)
+    const index = store.index('meetingKey')
+    const records = await requestToPromise(index.getAll(meetingKey(courseId, meetingId)))
+
+    return records.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  } finally {
+    db.close()
+  }
+}
+
+export async function saveMeetingRequest({ courseId, meetingId, text, reviewInClass }) {
+  const record = {
+    id: `${meetingKey(courseId, meetingId)}:request:${createId()}`,
+    meetingKey: meetingKey(courseId, meetingId),
+    courseId,
+    meetingId: String(meetingId),
+    text,
+    reviewInClass,
+    createdAt: new Date().toISOString(),
+  }
+
+  const db = await openDatabase()
+
+  try {
+    const transaction = db.transaction(REQUESTS_STORE_NAME, 'readwrite')
+    await requestToPromise(transaction.objectStore(REQUESTS_STORE_NAME).put(record))
+    return record
+  } finally {
+    db.close()
+  }
+}
+
+export async function deleteMeetingRequest(id) {
+  const db = await openDatabase()
+
+  try {
+    const transaction = db.transaction(REQUESTS_STORE_NAME, 'readwrite')
+    await requestToPromise(transaction.objectStore(REQUESTS_STORE_NAME).delete(id))
   } finally {
     db.close()
   }

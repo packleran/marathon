@@ -1,16 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
 import {
+  deleteMeetingRequest,
   deleteUploadedMaterial,
   getDeletedMaterialIds,
+  getMeetingRequests,
   getUploadedMaterials,
   saveDeletedMaterial,
+  saveMeetingRequest,
   saveUploadedMaterial,
 } from '../uploadedMaterials'
 
 const detailTabs = [
   { key: 'overview', label: 'סקירה', icon: 'M11.25 4.5l7.5 7.5-7.5 7.5m-6-15l7.5 7.5-7.5 7.5' },
   { key: 'materials', label: 'חומרים', icon: 'M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z' },
-  { key: 'questions', label: 'שאלות', icon: 'M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z' },
+  { key: 'requests', label: 'תיבת בקשות', icon: 'M8.625 9.75a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z' },
 ]
 
 const acceptedMaterialTypes = [
@@ -391,46 +394,178 @@ function MaterialsTab({ courseId, meeting }) {
   )
 }
 
-function QuestionsTab({ meeting }) {
-  const { questions } = meeting.materials
-  const [openQ, setOpenQ] = useState(null)
+function formatRequestDate(value) {
+  return new Intl.DateTimeFormat('he-IL', {
+    day: 'numeric',
+    month: 'long',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value))
+}
 
-  if (questions.length === 0) {
-    return (
-      <div className="text-center py-8">
-        <div className="mx-auto h-12 w-12 rounded-full bg-slate-100 flex items-center justify-center mb-3">
-          <svg className="h-5 w-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z" />
-          </svg>
-        </div>
-        <p className="text-sm text-slate-500">עוד אין שאלות למפגש הזה</p>
-      </div>
-    )
+function RequestsTab({ courseId, meeting }) {
+  const [requests, setRequests] = useState([])
+  const [requestText, setRequestText] = useState('')
+  const [reviewInClass, setReviewInClass] = useState(true)
+  const [loadingRequests, setLoadingRequests] = useState(true)
+  const [savingRequest, setSavingRequest] = useState(false)
+  const [status, setStatus] = useState(null)
+
+  useEffect(() => {
+    let ignore = false
+
+    async function loadRequests() {
+      setLoadingRequests(true)
+
+      try {
+        const records = await getMeetingRequests({ courseId, meetingId: meeting.id })
+
+        if (!ignore) {
+          setRequests(records)
+        }
+      } catch {
+        if (!ignore) {
+          setStatus({ type: 'error', text: 'שמירת בקשות לא זמינה בדפדפן הזה' })
+        }
+      } finally {
+        if (!ignore) {
+          setLoadingRequests(false)
+        }
+      }
+    }
+
+    loadRequests()
+
+    return () => {
+      ignore = true
+    }
+  }, [courseId, meeting.id])
+
+  async function handleSubmit(event) {
+    event.preventDefault()
+
+    const text = requestText.trim()
+    if (!text) {
+      setStatus({ type: 'error', text: 'צריך לכתוב שאלה לפני השליחה' })
+      return
+    }
+
+    setSavingRequest(true)
+    setStatus(null)
+
+    try {
+      const record = await saveMeetingRequest({
+        courseId,
+        meetingId: meeting.id,
+        text,
+        reviewInClass,
+      })
+
+      setRequests((current) => [record, ...current])
+      setRequestText('')
+      setReviewInClass(true)
+      setStatus({ type: 'success', text: 'הבקשה נשמרה בתיבה' })
+    } catch {
+      setStatus({ type: 'error', text: 'לא הצלחתי לשמור את הבקשה' })
+    } finally {
+      setSavingRequest(false)
+    }
+  }
+
+  async function handleDeleteRequest(request) {
+    setStatus(null)
+
+    try {
+      await deleteMeetingRequest(request.id)
+      setRequests((current) => current.filter((item) => item.id !== request.id))
+      setStatus({ type: 'success', text: 'הבקשה הוסרה מהתיבה' })
+    } catch {
+      setStatus({ type: 'error', text: 'לא הצלחתי למחוק את הבקשה' })
+    }
   }
 
   return (
-    <div className="space-y-2.5">
-      {questions.map((q, i) => (
-        <div key={i} className="rounded-xl border border-slate-100 bg-slate-50 overflow-hidden">
+    <div className="space-y-5">
+      <form onSubmit={handleSubmit} className="rounded-xl border border-slate-100 bg-slate-50 p-4">
+        <label htmlFor={`request-${meeting.id}`} className="mb-2 block text-xs font-semibold text-slate-400 uppercase tracking-wider">
+          שאלה למפגש
+        </label>
+        <textarea
+          id={`request-${meeting.id}`}
+          value={requestText}
+          onChange={(event) => setRequestText(event.target.value)}
+          rows={4}
+          className="min-h-28 w-full resize-y rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm leading-relaxed text-slate-700 outline-none transition-colors placeholder:text-slate-300 focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+          placeholder="כתבו כאן את השאלה"
+        />
+        <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <label className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={reviewInClass}
+              onChange={(event) => setReviewInClass(event.target.checked)}
+              className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-200"
+            />
+            לעבור עליה בכיתה
+          </label>
           <button
-            onClick={() => setOpenQ(openQ === i ? null : i)}
-            className="w-full flex items-center justify-between p-4 text-right cursor-pointer hover:bg-slate-100/50 transition-colors"
+            type="submit"
+            disabled={savingRequest}
+            className="inline-flex w-fit items-center justify-center gap-2 rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white shadow-sm shadow-sky-200 transition-colors hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
           >
-            <span className="text-sm font-medium text-slate-700">{q.question}</span>
-            <svg
-              className={`h-4 w-4 text-slate-400 flex-shrink-0 mr-3 transition-transform duration-200 ${openQ === i ? 'rotate-180' : ''}`}
-              fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-            </svg>
+            {savingRequest ? 'שומר...' : 'שלח בקשה'}
           </button>
-          {openQ === i && (
-            <div className="px-4 pb-4 border-t border-slate-100">
-              <p className="pt-3 text-sm text-slate-600 leading-relaxed">{q.answer}</p>
-            </div>
-          )}
         </div>
-      ))}
+      </form>
+
+      <div>
+        <h4 className="mb-2.5 text-xs font-semibold text-slate-400 uppercase tracking-wider">בקשות שנשלחו</h4>
+        {loadingRequests ? (
+          <p className="text-xs text-slate-400">טוען בקשות שמורות...</p>
+        ) : requests.length > 0 ? (
+          <div className="space-y-2.5">
+            {requests.map((request) => (
+              <div key={request.id} className="rounded-xl border border-slate-100 bg-slate-50 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">{request.text}</p>
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      {request.reviewInClass && (
+                        <span className="rounded-full bg-sky-50 px-2.5 py-1 text-[11px] font-medium text-sky-700 ring-1 ring-sky-100">
+                          לעבור בכיתה
+                        </span>
+                      )}
+                      <span className="text-[11px] text-slate-400">{formatRequestDate(request.createdAt)}</span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteRequest(request)}
+                    aria-label="מחק בקשה"
+                    className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-slate-300 transition-colors hover:bg-rose-50 hover:text-rose-500 cursor-pointer"
+                  >
+                    <TrashIcon />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/70 px-4 py-5 text-center text-sm text-slate-400">
+            עוד אין בקשות למפגש הזה
+          </div>
+        )}
+      </div>
+
+      {status && (
+        <p className={`rounded-lg px-3 py-2 text-xs ${
+          status.type === 'error'
+            ? 'bg-rose-50 text-rose-600 ring-1 ring-rose-100'
+            : 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100'
+        }`}>
+          {status.text}
+        </p>
+      )}
     </div>
   )
 }
@@ -462,7 +597,7 @@ export default function MeetingDetail({ courseId, meeting }) {
 
         {activeTab === 'overview' && <OverviewTab meeting={meeting} />}
         {activeTab === 'materials' && <MaterialsTab courseId={courseId} meeting={meeting} />}
-        {activeTab === 'questions' && <QuestionsTab meeting={meeting} />}
+        {activeTab === 'requests' && <RequestsTab courseId={courseId} meeting={meeting} />}
       </div>
     </div>
   )
