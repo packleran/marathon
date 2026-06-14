@@ -59,7 +59,7 @@ function CourseEditor({ course, onSave }) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="mb-6 rounded-2xl bg-white p-5 border border-slate-100 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+    <form noValidate onSubmit={handleSubmit} className="mb-6 rounded-2xl bg-white p-5 border border-slate-100 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
       <h2 className="mb-4 text-sm font-semibold text-slate-800">עריכת פרטי קורס</h2>
       <div className="grid gap-3 md:grid-cols-3">
         <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">

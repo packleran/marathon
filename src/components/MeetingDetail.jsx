@@ -89,14 +89,33 @@ function normalizeTopics(topicsText) {
     .filter(Boolean)
 }
 
+function parseTimeRange(time = '') {
+  const matches = String(time).match(/\d{1,2}:\d{2}/g) ?? []
+
+  return {
+    startTime: matches[0] ?? '',
+    endTime: matches[1] ?? '',
+  }
+}
+
+function formatTimeRange(startTime, endTime) {
+  const start = startTime.trim()
+  const end = endTime.trim()
+
+  if (start && end) return `${start}–${end}`
+  return start || end
+}
+
 function MeetingEditor({ meeting, onSave }) {
+  const { startTime, endTime } = parseTimeRange(meeting.time)
   const [form, setForm] = useState({
     title: meeting.title,
     description: meeting.description,
     date: meeting.date,
     dateDisplay: meeting.dateDisplay,
     day: meeting.day,
-    time: meeting.time,
+    startTime,
+    endTime,
     location: meeting.location,
     type: meeting.type,
     topics: meeting.topics.join('\n'),
@@ -115,7 +134,7 @@ function MeetingEditor({ meeting, onSave }) {
       date: form.date,
       dateDisplay: form.dateDisplay.trim(),
       day: form.day.trim(),
-      time: form.time.trim(),
+      time: formatTimeRange(form.startTime, form.endTime),
       location: form.location.trim(),
       type: form.type,
       topics: normalizeTopics(form.topics),
@@ -124,7 +143,7 @@ function MeetingEditor({ meeting, onSave }) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="rounded-xl border border-slate-100 bg-slate-50 p-4">
+    <form noValidate onSubmit={handleSubmit} className="rounded-xl border border-slate-100 bg-slate-50 p-4">
       <h4 className="mb-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">עריכת פרטי מפגש</h4>
       <div className="grid gap-3 md:grid-cols-2">
         <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
@@ -172,11 +191,25 @@ function MeetingEditor({ meeting, onSave }) {
           />
         </label>
         <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-          שעה
+          שעת התחלה
           <input
-            value={form.time}
-            onChange={(event) => updateField('time', event.target.value)}
-            className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal text-slate-700 outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+            value={form.startTime}
+            onChange={(event) => updateField('startTime', event.target.value)}
+            inputMode="numeric"
+            dir="ltr"
+            placeholder="18:00"
+            className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-mono font-normal text-slate-700 outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+          />
+        </label>
+        <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+          שעת סיום
+          <input
+            value={form.endTime}
+            onChange={(event) => updateField('endTime', event.target.value)}
+            inputMode="numeric"
+            dir="ltr"
+            placeholder="21:00"
+            className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-mono font-normal text-slate-700 outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
           />
         </label>
         <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider md:col-span-2">
