@@ -64,6 +64,10 @@ function storedMaterialId(category, item) {
   return `${category}:${item.url}`
 }
 
+function isRealPresetMaterial(item) {
+  return item.url && item.url !== '#'
+}
+
 function groupUploadedMaterials(materials) {
   return materials.reduce((groups, material) => {
     if (!groups[material.category]) return groups
@@ -529,12 +533,14 @@ function MaterialsTab({ courseId, meeting }) {
   const sectionItems = {
     presentations: [
       ...presentations
+        .filter(isRealPresetMaterial)
         .map((item) => ({ ...item, id: storedMaterialId('presentations', item), category: 'presentations', uploaded: false }))
         .filter((item) => !deletedMaterialIds.includes(item.id)),
       ...uploadedMaterials.presentations,
     ],
     exercises: [
       ...exercises
+        .filter(isRealPresetMaterial)
         .map((item) => ({ ...item, id: storedMaterialId('exercises', item), category: 'exercises', uploaded: false }))
         .filter((item) => !deletedMaterialIds.includes(item.id)),
       ...uploadedMaterials.exercises,
