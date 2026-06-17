@@ -253,7 +253,7 @@ function MeetingEditor({ meeting, onSave }) {
   )
 }
 
-function OverviewTab({ meeting, onUpdateMeeting }) {
+function OverviewTab({ canEditContent, meeting, onUpdateMeeting }) {
   return (
     <div className="space-y-4">
       <p className="text-sm text-slate-600 leading-relaxed">{meeting.description}</p>
@@ -300,7 +300,7 @@ function OverviewTab({ meeting, onUpdateMeeting }) {
           )}
         </div>
       </div>
-      {onUpdateMeeting && (
+      {canEditContent && onUpdateMeeting && (
         <MeetingEditor key={meeting.id} meeting={meeting} onSave={onUpdateMeeting} />
       )}
     </div>
@@ -333,7 +333,7 @@ function TrashIcon() {
   )
 }
 
-function MaterialItem({ item, iconClassName, onDelete }) {
+function MaterialItem({ canEditContent, item, iconClassName, onDelete }) {
   return (
     <div className="group flex items-center gap-3 rounded-xl bg-slate-50 p-3.5 border border-slate-100 hover:border-sky-200 hover:bg-sky-50/50 transition-all">
       <FileIcon className={iconClassName} />
@@ -352,19 +352,22 @@ function MaterialItem({ item, iconClassName, onDelete }) {
           </span>
         )}
       </a>
-      <button
-        type="button"
-        onClick={() => onDelete(item)}
-        aria-label={`מחק ${item.title}`}
-        className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-slate-300 transition-colors hover:bg-rose-50 hover:text-rose-500 cursor-pointer"
-      >
-        <TrashIcon />
-      </button>
+      {canEditContent && (
+        <button
+          type="button"
+          onClick={() => onDelete(item)}
+          aria-label={`מחק ${item.title}`}
+          className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-slate-300 transition-colors hover:bg-rose-50 hover:text-rose-500 cursor-pointer"
+        >
+          <TrashIcon />
+        </button>
+      )}
     </div>
   )
 }
 
 function MaterialSection({
+  canEditContent,
   category,
   items,
   onDelete,
@@ -377,24 +380,27 @@ function MaterialSection({
     <div>
       <div className="mb-2.5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">{meta.title}</h4>
-        <label className={`inline-flex w-fit items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition-colors hover:border-sky-200 hover:text-sky-600 cursor-pointer ${
-          savingCategory === category ? 'pointer-events-none opacity-60' : ''
-        }`}>
-          <input
-            type="file"
-            multiple
-            accept={acceptedMaterialTypes}
-            className="sr-only"
-            onChange={(event) => onUpload(category, event)}
-          />
-          <UploadIcon />
-          {savingCategory === category ? 'שומר...' : `העלה ${meta.uploadLabel}`}
-        </label>
+        {canEditContent && (
+          <label className={`inline-flex w-fit items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition-colors hover:border-sky-200 hover:text-sky-600 cursor-pointer ${
+            savingCategory === category ? 'pointer-events-none opacity-60' : ''
+          }`}>
+            <input
+              type="file"
+              multiple
+              accept={acceptedMaterialTypes}
+              className="sr-only"
+              onChange={(event) => onUpload(category, event)}
+            />
+            <UploadIcon />
+            {savingCategory === category ? 'שומר...' : `העלה ${meta.uploadLabel}`}
+          </label>
+        )}
       </div>
       {items.length > 0 ? (
         <div className="space-y-2">
           {items.map((item) => (
             <MaterialItem
+              canEditContent={canEditContent}
               key={item.id ?? item.url}
               item={item}
               iconClassName={meta.iconClassName}
@@ -411,7 +417,7 @@ function MaterialSection({
   )
 }
 
-function MaterialsTab({ courseId, meeting }) {
+function MaterialsTab({ canEditContent, courseId, meeting }) {
   const { presentations, exercises } = meeting.materials
   const [uploadedMaterials, setUploadedMaterials] = useState(emptyUploadedMaterials)
   const [deletedMaterialIds, setDeletedMaterialIds] = useState([])
@@ -465,6 +471,8 @@ function MaterialsTab({ courseId, meeting }) {
   }, [courseId, meeting.id])
 
   async function handleUpload(category, event) {
+    if (!canEditContent) return
+
     const files = Array.from(event.target.files ?? [])
     if (files.length === 0) return
 
@@ -503,6 +511,8 @@ function MaterialsTab({ courseId, meeting }) {
   }
 
   async function handleDelete(item) {
+    if (!canEditContent) return
+
     setStatus(null)
 
     try {
@@ -550,6 +560,7 @@ function MaterialsTab({ courseId, meeting }) {
   return (
     <div className="space-y-5">
       <MaterialSection
+        canEditContent={canEditContent}
         category="presentations"
         items={sectionItems.presentations}
         onDelete={handleDelete}
@@ -557,6 +568,7 @@ function MaterialsTab({ courseId, meeting }) {
         savingCategory={savingCategory}
       />
       <MaterialSection
+        canEditContent={canEditContent}
         category="exercises"
         items={sectionItems.exercises}
         onDelete={handleDelete}
@@ -588,7 +600,7 @@ function formatRequestDate(value) {
   }).format(new Date(value))
 }
 
-function RequestsTab({ courseId, meeting }) {
+function RequestsTab({ courseId, isAdminMode, meeting }) {
   const [requests, setRequests] = useState([])
   const [requestText, setRequestText] = useState('')
   const [requestFile, setRequestFile] = useState(null)
@@ -683,6 +695,8 @@ function RequestsTab({ courseId, meeting }) {
   }
 
   async function handleDeleteRequest(request) {
+    if (!isAdminMode) return
+
     setStatus(null)
 
     try {
@@ -805,14 +819,16 @@ function RequestsTab({ courseId, meeting }) {
                       <span className="text-[11px] text-slate-400">{formatRequestDate(request.createdAt)}</span>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteRequest(request)}
-                    aria-label="מחק בקשה"
-                    className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-slate-300 transition-colors hover:bg-rose-50 hover:text-rose-500 cursor-pointer"
-                  >
-                    <TrashIcon />
-                  </button>
+                  {isAdminMode && (
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteRequest(request)}
+                      aria-label="מחק בקשה"
+                      className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-slate-300 transition-colors hover:bg-rose-50 hover:text-rose-500 cursor-pointer"
+                    >
+                      <TrashIcon />
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -837,7 +853,13 @@ function RequestsTab({ courseId, meeting }) {
   )
 }
 
-export default function MeetingDetail({ courseId, meeting, onUpdateMeeting }) {
+export default function MeetingDetail({
+  canEditContent = false,
+  courseId,
+  isAdminMode = false,
+  meeting,
+  onUpdateMeeting,
+}) {
   const [activeTab, setActiveTab] = useState('overview')
 
   return (
@@ -862,9 +884,27 @@ export default function MeetingDetail({ courseId, meeting, onUpdateMeeting }) {
           ))}
         </div>
 
-        {activeTab === 'overview' && <OverviewTab meeting={meeting} onUpdateMeeting={onUpdateMeeting} />}
-        {activeTab === 'materials' && <MaterialsTab courseId={courseId} meeting={meeting} />}
-        {activeTab === 'requests' && <RequestsTab courseId={courseId} meeting={meeting} />}
+        {activeTab === 'overview' && (
+          <OverviewTab
+            canEditContent={canEditContent}
+            meeting={meeting}
+            onUpdateMeeting={onUpdateMeeting}
+          />
+        )}
+        {activeTab === 'materials' && (
+          <MaterialsTab
+            canEditContent={canEditContent}
+            courseId={courseId}
+            meeting={meeting}
+          />
+        )}
+        {activeTab === 'requests' && (
+          <RequestsTab
+            courseId={courseId}
+            isAdminMode={isAdminMode}
+            meeting={meeting}
+          />
+        )}
       </div>
     </div>
   )

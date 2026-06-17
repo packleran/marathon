@@ -3,6 +3,10 @@ import MeetingDetail from './MeetingDetail'
 
 function statusLabel(date) {
   const d = new Date(date)
+  if (!date || Number.isNaN(d.getTime())) {
+    return { text: 'טיוטה', color: 'bg-slate-100 text-slate-500' }
+  }
+
   const now = new Date()
   if (d < now) return { text: 'הסתיים', color: 'bg-slate-100 text-slate-500' }
   const diff = d - now
@@ -19,12 +23,37 @@ function TrashIcon() {
   )
 }
 
-export default function MeetingsSection({ course, onDeleteMeeting, onUpdateMeeting }) {
-  const [expandedId, setExpandedId] = useState(null)
+function DuplicateIcon() {
+  return (
+    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 8.25h10.5v10.5H8.25z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 15.75V5.25h10.5" />
+    </svg>
+  )
+}
 
-  function handleDeleteMeeting(meetingId) {
-    setExpandedId((current) => (current === meetingId ? null : current))
-    onDeleteMeeting(course.id, meetingId)
+export default function MeetingsSection({
+  canEditContent = false,
+  course,
+  focusMeetingId,
+  isAdminMode = false,
+  onDeleteMeeting,
+  onDuplicateMeeting,
+  onUpdateMeeting,
+}) {
+  const [expandedId, setExpandedId] = useState(focusMeetingId ?? null)
+
+  function handleDeleteMeeting(meeting) {
+    if (!canEditContent || !window.confirm(`למחוק את המפגש "${meeting.title}"?`)) return
+
+    setExpandedId((current) => (current === meeting.id ? null : current))
+    onDeleteMeeting(course.id, meeting.id)
+  }
+
+  function handleDuplicateMeeting(meeting) {
+    if (!canEditContent) return
+
+    onDuplicateMeeting(course.id, meeting)
   }
 
   if (course.meetings.length === 0) {
@@ -103,15 +132,28 @@ export default function MeetingsSection({ course, onDeleteMeeting, onUpdateMeeti
                   <span className={`hidden sm:inline-flex rounded-full px-2.5 py-1 text-[11px] font-medium ${status.color}`}>
                     {status.text}
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteMeeting(m.id)}
-                    aria-label={`מחק את ${m.title}`}
-                    title="מחק מפגש"
-                    className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-300 transition-colors hover:bg-rose-50 hover:text-rose-500 cursor-pointer"
-                  >
-                    <TrashIcon />
-                  </button>
+                  {canEditContent && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => handleDuplicateMeeting(m)}
+                        aria-label={`שכפל את ${m.title}`}
+                        title="שכפל מפגש"
+                        className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-300 transition-colors hover:bg-sky-50 hover:text-sky-500 cursor-pointer"
+                      >
+                        <DuplicateIcon />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteMeeting(m)}
+                        aria-label={`מחק את ${m.title}`}
+                        title="מחק מפגש"
+                        className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-300 transition-colors hover:bg-rose-50 hover:text-rose-500 cursor-pointer"
+                      >
+                        <TrashIcon />
+                      </button>
+                    </>
+                  )}
                   <button
                     type="button"
                     onClick={() => setExpandedId(isExpanded ? null : m.id)}
@@ -133,9 +175,11 @@ export default function MeetingsSection({ course, onDeleteMeeting, onUpdateMeeti
 
               {isExpanded && (
                 <MeetingDetail
+                  canEditContent={canEditContent}
                   courseId={course.id}
+                  isAdminMode={isAdminMode}
                   meeting={m}
-                  onUpdateMeeting={(updates) => onUpdateMeeting(course.id, m.id, updates)}
+                  onUpdateMeeting={canEditContent ? (updates) => onUpdateMeeting(course.id, m.id, updates) : undefined}
                 />
               )}
             </div>
