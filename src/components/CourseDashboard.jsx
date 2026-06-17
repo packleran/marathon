@@ -20,6 +20,7 @@ import {
   updateMeetingOverride,
 } from '../siteContent'
 
+const ADMIN_ACCESS_STORAGE_KEY = 'marathon-admin-access'
 const ADMIN_MODE_STORAGE_KEY = 'marathon-admin-mode'
 
 const colorStyles = {
@@ -49,6 +50,14 @@ function toDatetimeLocal(value) {
 function persistAdminMode(enabled) {
   try {
     localStorage.setItem(ADMIN_MODE_STORAGE_KEY, enabled ? 'true' : 'false')
+  } catch {
+    // Ignore private browsing or blocked storage.
+  }
+}
+
+function persistAdminAccess(enabled) {
+  try {
+    localStorage.setItem(ADMIN_ACCESS_STORAGE_KEY, enabled ? 'true' : 'false')
   } catch {
     // Ignore private browsing or blocked storage.
   }
@@ -87,6 +96,17 @@ function getInitialAdminMode() {
 
   try {
     return localStorage.getItem(ADMIN_MODE_STORAGE_KEY) === 'true'
+  } catch {
+    return false
+  }
+}
+
+function getInitialAdminAccess() {
+  const requestedMode = getRequestedAdminMode()
+  if (requestedMode === true) return true
+
+  try {
+    return localStorage.getItem(ADMIN_ACCESS_STORAGE_KEY) === 'true'
   } catch {
     return false
   }
@@ -139,30 +159,65 @@ function EyeIcon() {
   return <IconButtonSvg path="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.64 0 8.577 3.01 9.964 7.183.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.64 0-8.577-3.01-9.964-7.178z M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
 }
 
-function AdminToolbar({ onExport, onStudentView }) {
+function ModeToolbar({
+  isAdminMode,
+  onAdminView,
+  onExport,
+  onForgetAdminAccess,
+  onStudentView,
+}) {
   return (
     <div className="border-b border-slate-200 bg-white/85 backdrop-blur">
       <div className="mx-auto flex max-w-7xl flex-col gap-3 px-5 py-3 md:flex-row md:items-center md:justify-between md:px-8">
         <div className="flex items-center gap-2">
-          <span className="inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
-          <span className="text-sm font-semibold text-slate-700">מצב ניהול פעיל</span>
+          <span className={`inline-flex h-2.5 w-2.5 rounded-full ${isAdminMode ? 'bg-emerald-500' : 'bg-sky-500'}`} />
+          <span className="text-sm font-semibold text-slate-700">
+            {isAdminMode ? 'מצב ניהול פעיל' : 'תצוגת סטודנט פעילה'}
+          </span>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 shadow-sm">
+            <button
+              type="button"
+              onClick={onStudentView}
+              className={`inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer ${
+                !isAdminMode
+                  ? 'bg-white text-sky-700 shadow-sm'
+                  : 'text-slate-500 hover:bg-white hover:text-slate-700'
+              }`}
+            >
+              <EyeIcon />
+              סטודנט
+            </button>
+            <button
+              type="button"
+              onClick={onAdminView}
+              className={`inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer ${
+                isAdminMode
+                  ? 'bg-white text-emerald-700 shadow-sm'
+                  : 'text-slate-500 hover:bg-white hover:text-slate-700'
+              }`}
+            >
+              <UnlockIcon />
+              אדמין
+            </button>
+          </div>
+          {isAdminMode && (
+            <button
+              type="button"
+              onClick={onExport}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600 shadow-sm transition-colors hover:border-sky-200 hover:text-sky-600 cursor-pointer"
+            >
+              <DownloadIcon />
+              ייצוא עריכות
+            </button>
+          )}
           <button
             type="button"
-            onClick={onStudentView}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600 shadow-sm transition-colors hover:border-sky-200 hover:text-sky-600 cursor-pointer"
+            onClick={onForgetAdminAccess}
+            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-500 shadow-sm transition-colors hover:border-slate-300 hover:text-slate-700 cursor-pointer"
           >
-            <EyeIcon />
-            תצוגת סטודנט
-          </button>
-          <button
-            type="button"
-            onClick={onExport}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600 shadow-sm transition-colors hover:border-sky-200 hover:text-sky-600 cursor-pointer"
-          >
-            <DownloadIcon />
-            ייצוא עריכות
+            הסתר סרגל
           </button>
         </div>
       </div>
@@ -320,6 +375,7 @@ export default function CourseDashboard() {
   const [activeCourseId, setActiveCourseId] = useState(courses[0].id)
   const [activeContent, setActiveContent] = useState('meetings')
   const [contentOverrides, setContentOverrides] = useState(loadContentOverrides)
+  const [hasAdminAccess, setHasAdminAccess] = useState(getInitialAdminAccess)
   const [isAdminMode, setIsAdminMode] = useState(getInitialAdminMode)
   const [focusedMeetingId, setFocusedMeetingId] = useState(null)
 
@@ -337,6 +393,9 @@ export default function CourseDashboard() {
     const requestedMode = getRequestedAdminMode()
     if (requestedMode === null) return
 
+    if (requestedMode) {
+      persistAdminAccess(true)
+    }
     persistAdminMode(requestedMode)
     clearModeQueryParams()
   }, [])
@@ -350,9 +409,21 @@ export default function CourseDashboard() {
   }
 
   function setAdminMode(enabled) {
+    if (enabled) {
+      persistAdminAccess(true)
+      setHasAdminAccess(true)
+    }
     persistAdminMode(enabled)
     clearModeQueryParams()
     setIsAdminMode(enabled)
+  }
+
+  function forgetAdminAccess() {
+    persistAdminAccess(false)
+    persistAdminMode(false)
+    clearModeQueryParams()
+    setHasAdminAccess(false)
+    setIsAdminMode(false)
   }
 
   function handleExportContent() {
@@ -439,9 +510,12 @@ export default function CourseDashboard() {
   return (
     <div className="min-h-screen bg-[#fafbfd]">
       <Header course={course} />
-      {isAdminMode && (
-        <AdminToolbar
+      {(hasAdminAccess || isAdminMode) && (
+        <ModeToolbar
+          isAdminMode={isAdminMode}
+          onAdminView={() => setAdminMode(true)}
           onExport={handleExportContent}
+          onForgetAdminAccess={forgetAdminAccess}
           onStudentView={() => setAdminMode(false)}
         />
       )}
