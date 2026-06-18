@@ -21,11 +21,10 @@ body {
 }
 
 @keyframes expand {
-  from { opacity: 0; max-height: 0; }
-  to { opacity: 1; max-height: 800px; }
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .animate-expand {
   animation: expand 0.35s ease-out both;
-  overflow: hidden;
 }

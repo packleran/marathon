@@ -403,6 +403,105 @@ app.delete('/api/materials/:id', requireDatabase, requireAdmin, asyncHandler(asy
   res.status(204).end()
 }))
 
+app.post('/api/courses/:sourceCourseId/materials/duplicate', requireDatabase, requireAdmin, asyncHandler(async (req, res) => {
+  await ensureDb()
+
+  const { sourceCourseId } = req.params
+  const { targetCourseId, meetings } = req.body
+
+  if (!targetCourseId || !Array.isArray(meetings)) {
+    res.status(400).json({ error: 'Missing targetCourseId or meetings' })
+    return
+  }
+
+  const client = await pool.connect()
+  let copiedMaterials = 0
+  let copiedDeletedMaterials = 0
+
+  try {
+    await client.query('BEGIN')
+
+    for (const meeting of meetings) {
+      const sourceMeetingId = String(meeting.sourceMeetingId ?? '')
+      const targetMeetingId = String(meeting.targetMeetingId ?? '')
+      if (!sourceMeetingId || !targetMeetingId) continue
+
+      const sourceKey = meetingKey(sourceCourseId, sourceMeetingId)
+      const targetKey = meetingKey(targetCourseId, targetMeetingId)
+
+      const sourceMaterials = await client.query(
+        `SELECT category, title, file_name, type, size, data
+         FROM marathon_materials
+         WHERE meeting_key = $1
+         ORDER BY uploaded_at ASC`,
+        [sourceKey],
+      )
+
+      for (const row of sourceMaterials.rows) {
+        await client.query(
+          `INSERT INTO marathon_materials
+             (id, meeting_key, course_id, meeting_id, category, title, file_name, type, size, data)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+          [
+            `${targetKey}:${row.category}:${createId()}`,
+            targetKey,
+            targetCourseId,
+            targetMeetingId,
+            row.category,
+            row.title,
+            row.file_name,
+            row.type,
+            row.size,
+            row.data,
+          ],
+        )
+        copiedMaterials += 1
+      }
+
+      const sourceDeletedMaterials = await client.query(
+        `SELECT category, material_id
+         FROM marathon_deleted_materials
+         WHERE meeting_key = $1
+         ORDER BY deleted_at ASC`,
+        [sourceKey],
+      )
+
+      for (const row of sourceDeletedMaterials.rows) {
+        const id = deletedMaterialKey({
+          courseId: targetCourseId,
+          meetingId: targetMeetingId,
+          category: row.category,
+          materialId: row.material_id,
+        })
+
+        await client.query(
+          `INSERT INTO marathon_deleted_materials
+             (id, meeting_key, course_id, meeting_id, category, material_id, deleted_at)
+           VALUES ($1, $2, $3, $4, $5, $6, now())
+           ON CONFLICT (id)
+           DO UPDATE SET deleted_at = now()`,
+          [id, targetKey, targetCourseId, targetMeetingId, row.category, row.material_id],
+        )
+        copiedDeletedMaterials += 1
+      }
+    }
+
+    await client.query('COMMIT')
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {})
+    throw error
+  } finally {
+    client.release()
+  }
+
+  await notifyContentChanged()
+
+  res.status(201).json({
+    copiedMaterials,
+    copiedDeletedMaterials,
+  })
+}))
+
 app.get('/api/deleted-materials', requireDatabase, asyncHandler(async (req, res) => {
   await ensureDb()
   const { courseId, meetingId } = req.query

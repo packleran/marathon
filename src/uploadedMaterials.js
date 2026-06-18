@@ -194,6 +194,88 @@ export async function deleteUploadedMaterial(id) {
   }
 }
 
+export async function duplicateCourseMaterials({ sourceCourseId, targetCourseId, meetings }) {
+  if (shouldUseServerApi()) {
+    try {
+      return await fetchApiJson(`/api/courses/${encodeURIComponent(sourceCourseId)}/materials/duplicate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetCourseId, meetings }),
+      })
+    } catch (error) {
+      shouldFallback(error)
+    }
+  }
+
+  const db = await openDatabase()
+  let copiedMaterials = 0
+  let copiedDeletedMaterials = 0
+
+  try {
+    for (const meeting of meetings) {
+      const sourceMeetingId = String(meeting.sourceMeetingId)
+      const targetMeetingId = String(meeting.targetMeetingId)
+      const sourceKey = meetingKey(sourceCourseId, sourceMeetingId)
+      const targetKey = meetingKey(targetCourseId, targetMeetingId)
+
+      const readMaterialsTransaction = db.transaction(STORE_NAME, 'readonly')
+      const sourceMaterials = await requestToPromise(
+        readMaterialsTransaction.objectStore(STORE_NAME).index('meetingKey').getAll(sourceKey),
+      )
+
+      if (sourceMaterials.length > 0) {
+        const writeMaterialsTransaction = db.transaction(STORE_NAME, 'readwrite')
+        const materialsStore = writeMaterialsTransaction.objectStore(STORE_NAME)
+        const writeRequests = sourceMaterials.map((record) => requestToPromise(
+          materialsStore.put({
+            ...record,
+            id: `${targetKey}:${record.category}:${createId()}`,
+            meetingKey: targetKey,
+            courseId: targetCourseId,
+            meetingId: targetMeetingId,
+            uploadedAt: new Date().toISOString(),
+          }),
+        ))
+
+        await Promise.all(writeRequests)
+        copiedMaterials += sourceMaterials.length
+      }
+
+      const readDeletedTransaction = db.transaction(DELETED_STORE_NAME, 'readonly')
+      const deletedRecords = await requestToPromise(
+        readDeletedTransaction.objectStore(DELETED_STORE_NAME).index('meetingKey').getAll(sourceKey),
+      )
+
+      if (deletedRecords.length > 0) {
+        const writeDeletedTransaction = db.transaction(DELETED_STORE_NAME, 'readwrite')
+        const deletedStore = writeDeletedTransaction.objectStore(DELETED_STORE_NAME)
+        const writeRequests = deletedRecords.map((record) => requestToPromise(
+          deletedStore.put({
+            ...record,
+            id: deletedMaterialKey({
+              courseId: targetCourseId,
+              meetingId: targetMeetingId,
+              category: record.category,
+              materialId: record.materialId,
+            }),
+            meetingKey: targetKey,
+            courseId: targetCourseId,
+            meetingId: targetMeetingId,
+            deletedAt: new Date().toISOString(),
+          }),
+        ))
+
+        await Promise.all(writeRequests)
+        copiedDeletedMaterials += deletedRecords.length
+      }
+    }
+
+    return { copiedMaterials, copiedDeletedMaterials }
+  } finally {
+    db.close()
+  }
+}
+
 export async function getDeletedMaterialIds({ courseId, meetingId }) {
   if (shouldUseServerApi()) {
     try {

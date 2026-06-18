@@ -4,6 +4,7 @@ import MeetingsSection from './MeetingsSection'
 import RecordingsSection from './RecordingsSection'
 import Sidebar from './Sidebar'
 import { courses } from '../data'
+import { duplicateCourseMaterials } from '../uploadedMaterials'
 import {
   addCustomCourseOverride,
   addMeetingOverride,
@@ -562,12 +563,42 @@ export default function CourseDashboard() {
   }
 
   function handleDuplicateCourse(sourceCourse) {
+    if (!canEditContent) return
+
     const duplicatedCourse = createDuplicatedCourse(sourceCourse)
+    const meetings = sourceCourse.meetings.map((meeting, index) => ({
+      sourceMeetingId: meeting.id,
+      targetMeetingId: duplicatedCourse.meetings[index]?.id ?? meeting.id,
+    }))
 
     saveOverrides((current) => addCustomCourseOverride(current, duplicatedCourse))
     setActiveCourseId(duplicatedCourse.id)
     setActiveContent('meetings')
     setFocusedMeetingId(null)
+    setContentSyncStatus({ type: 'success', text: 'משכפל קבוצה וחומרים...' })
+
+    duplicateCourseMaterials({
+      sourceCourseId: sourceCourse.id,
+      targetCourseId: duplicatedCourse.id,
+      meetings,
+    })
+      .then(({ copiedMaterials = 0, copiedDeletedMaterials = 0 } = {}) => {
+        setRemoteRefreshToken((current) => current + 1)
+
+        const copiedCount = copiedMaterials + copiedDeletedMaterials
+        setContentSyncStatus({
+          type: 'success',
+          text: copiedCount > 0
+            ? `הקבוצה שוכפלה עם ${copiedCount} חומרים`
+            : 'הקבוצה שוכפלה',
+        })
+      })
+      .catch(() => {
+        setContentSyncStatus({
+          type: 'error',
+          text: 'הקבוצה שוכפלה, אבל החומרים לא הועתקו',
+        })
+      })
   }
 
   function handleDeleteCourse(courseId) {
