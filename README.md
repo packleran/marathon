@@ -1,16 +1,54 @@
-# React + Vite
+# Marathon
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React/Vite site with a small Node/Express server for shared content.
 
-Currently, two official plugins are available:
+## Local development
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+```bash
+npm install
+npm run dev
+```
 
-## React Compiler
+Local Vite development can fall back to browser storage when the API is not running.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Production
 
-## Expanding the ESLint configuration
+Railway should run:
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+```bash
+npm run build
+npm start
+```
+
+The server serves `dist/` and exposes `/api/*` for shared content, uploads, and meeting requests.
+
+## Railway layout
+
+Deploy the same GitHub repo twice in the same Railway project:
+
+- `marathon-admin`: admin UI, full editing enabled.
+- `marathon-students`: student UI, read-only.
+
+Add one Railway PostgreSQL service and point both app services at the same `DATABASE_URL`.
+
+### Admin service variables
+
+```env
+APP_ROLE=admin
+VITE_APP_ROLE=admin
+VITE_CONTENT_BACKEND=api
+DATABASE_URL=${{Postgres.DATABASE_URL}}
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=<choose-a-strong-password>
+```
+
+### Student service variables
+
+```env
+APP_ROLE=student
+VITE_APP_ROLE=student
+VITE_CONTENT_BACKEND=api
+DATABASE_URL=${{Postgres.DATABASE_URL}}
+```
+
+`APP_ROLE` protects the server API. `VITE_APP_ROLE` controls which UI is built.

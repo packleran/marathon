@@ -40,6 +40,7 @@ export default function MeetingsSection({
   onDeleteMeeting,
   onDuplicateMeeting,
   onUpdateMeeting,
+  refreshToken,
 }) {
   const [expandedId, setExpandedId] = useState(focusMeetingId ?? null)
 
@@ -180,6 +181,7 @@ export default function MeetingsSection({
                   isAdminMode={isAdminMode}
                   meeting={m}
                   onUpdateMeeting={canEditContent ? (updates) => onUpdateMeeting(course.id, m.id, updates) : undefined}
+                  refreshToken={refreshToken}
                 />
               )}
             </div>

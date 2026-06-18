@@ -110,6 +110,23 @@ function formatTimeRange(startTime, endTime) {
   return start || end
 }
 
+function createFileUrl(record, objectUrls) {
+  if (record.url || record.fileUrl || !record.blob) {
+    return record.url ?? record.fileUrl ?? ''
+  }
+
+  const url = URL.createObjectURL(record.blob)
+  objectUrls.add(url)
+  return url
+}
+
+function revokeObjectUrl(url, objectUrls) {
+  if (!url?.startsWith('blob:')) return
+
+  URL.revokeObjectURL(url)
+  objectUrls.delete(url)
+}
+
 function MeetingEditor({ meeting, onSave }) {
   const { startTime, endTime } = parseTimeRange(meeting.time)
   const [form, setForm] = useState({
@@ -417,7 +434,7 @@ function MaterialSection({
   )
 }
 
-function MaterialsTab({ canEditContent, courseId, meeting }) {
+function MaterialsTab({ canEditContent, courseId, meeting, refreshToken }) {
   const { presentations, exercises } = meeting.materials
   const [uploadedMaterials, setUploadedMaterials] = useState(emptyUploadedMaterials)
   const [deletedMaterialIds, setDeletedMaterialIds] = useState([])
@@ -441,12 +458,11 @@ function MaterialsTab({ canEditContent, courseId, meeting }) {
 
         if (ignore) return
 
-        const materials = records.map((record) => {
-          const url = URL.createObjectURL(record.blob)
-          objectUrls.add(url)
-
-          return { ...record, url, uploaded: true }
-        })
+        const materials = records.map((record) => ({
+          ...record,
+          url: createFileUrl(record, objectUrls),
+          uploaded: true,
+        }))
 
         setUploadedMaterials(groupUploadedMaterials(materials))
         setDeletedMaterialIds(deletedIds)
@@ -468,7 +484,7 @@ function MaterialsTab({ canEditContent, courseId, meeting }) {
       objectUrls.forEach((url) => URL.revokeObjectURL(url))
       objectUrls.clear()
     }
-  }, [courseId, meeting.id])
+  }, [courseId, meeting.id, refreshToken])
 
   async function handleUpload(category, event) {
     if (!canEditContent) return
@@ -489,9 +505,11 @@ function MaterialsTab({ canEditContent, courseId, meeting }) {
           category,
           file,
         })
-        const url = URL.createObjectURL(record.blob)
-        objectUrlsRef.current.add(url)
-        savedMaterials.push({ ...record, url, uploaded: true })
+        savedMaterials.push({
+          ...record,
+          url: createFileUrl(record, objectUrlsRef.current),
+          uploaded: true,
+        })
       }
 
       setUploadedMaterials((current) => ({
@@ -518,8 +536,7 @@ function MaterialsTab({ canEditContent, courseId, meeting }) {
     try {
       if (item.uploaded) {
         await deleteUploadedMaterial(item.id)
-        URL.revokeObjectURL(item.url)
-        objectUrlsRef.current.delete(item.url)
+        revokeObjectUrl(item.url, objectUrlsRef.current)
         setUploadedMaterials((current) => ({
           ...current,
           [item.category]: current[item.category].filter((material) => material.id !== item.id),
@@ -600,7 +617,7 @@ function formatRequestDate(value) {
   }).format(new Date(value))
 }
 
-function RequestsTab({ courseId, isAdminMode, meeting }) {
+function RequestsTab({ courseId, isAdminMode, meeting, refreshToken }) {
   const [requests, setRequests] = useState([])
   const [requestText, setRequestText] = useState('')
   const [requestFile, setRequestFile] = useState(null)
@@ -622,14 +639,10 @@ function RequestsTab({ courseId, isAdminMode, meeting }) {
         const records = await getMeetingRequests({ courseId, meetingId: meeting.id })
 
         if (!ignore) {
-          setRequests(records.map((record) => {
-            if (!record.blob) return record
-
-            const fileUrl = URL.createObjectURL(record.blob)
-            objectUrls.add(fileUrl)
-
-            return { ...record, fileUrl }
-          }))
+          setRequests(records.map((record) => ({
+            ...record,
+            fileUrl: createFileUrl(record, objectUrls),
+          })))
         }
       } catch {
         if (!ignore) {
@@ -649,7 +662,7 @@ function RequestsTab({ courseId, isAdminMode, meeting }) {
       objectUrls.forEach((url) => URL.revokeObjectURL(url))
       objectUrls.clear()
     }
-  }, [courseId, meeting.id])
+  }, [courseId, meeting.id, refreshToken])
 
   async function handleSubmit(event) {
     event.preventDefault()
@@ -671,12 +684,9 @@ function RequestsTab({ courseId, isAdminMode, meeting }) {
         reviewInClass,
         file: requestFile,
       })
-      const savedRecord = requestFile
-        ? { ...record, fileUrl: URL.createObjectURL(record.blob) }
-        : record
-
-      if (savedRecord.fileUrl) {
-        objectUrlsRef.current.add(savedRecord.fileUrl)
+      const savedRecord = {
+        ...record,
+        fileUrl: createFileUrl(record, objectUrlsRef.current),
       }
 
       setRequests((current) => [savedRecord, ...current])
@@ -702,8 +712,7 @@ function RequestsTab({ courseId, isAdminMode, meeting }) {
     try {
       await deleteMeetingRequest(request.id)
       if (request.fileUrl) {
-        URL.revokeObjectURL(request.fileUrl)
-        objectUrlsRef.current.delete(request.fileUrl)
+        revokeObjectUrl(request.fileUrl, objectUrlsRef.current)
       }
       setRequests((current) => current.filter((item) => item.id !== request.id))
       setStatus({ type: 'success', text: 'הבקשה הוסרה מהתיבה' })
@@ -859,6 +868,7 @@ export default function MeetingDetail({
   isAdminMode = false,
   meeting,
   onUpdateMeeting,
+  refreshToken,
 }) {
   const [activeTab, setActiveTab] = useState('overview')
 
@@ -896,6 +906,7 @@ export default function MeetingDetail({
             canEditContent={canEditContent}
             courseId={courseId}
             meeting={meeting}
+            refreshToken={refreshToken}
           />
         )}
         {activeTab === 'requests' && (
@@ -903,6 +914,7 @@ export default function MeetingDetail({
             courseId={courseId}
             isAdminMode={isAdminMode}
             meeting={meeting}
+            refreshToken={refreshToken}
           />
         )}
       </div>

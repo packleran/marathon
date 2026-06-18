@@ -3,6 +3,51 @@ const DB_VERSION = 3
 const STORE_NAME = 'materials'
 const DELETED_STORE_NAME = 'deletedMaterials'
 const REQUESTS_STORE_NAME = 'meetingRequests'
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
+const CONTENT_BACKEND = import.meta.env.VITE_CONTENT_BACKEND ?? 'api'
+
+function shouldUseServerApi() {
+  return CONTENT_BACKEND !== 'local'
+}
+
+function canUseBrowserFallback() {
+  return !import.meta.env.PROD
+}
+
+function apiUrl(path) {
+  return `${API_BASE_URL}${path}`
+}
+
+async function readJsonResponse(response) {
+  if (!response.ok) {
+    throw new Error(`Request failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+async function fetchApiJson(path, options = {}) {
+  return readJsonResponse(await fetch(apiUrl(path), {
+    credentials: 'include',
+    ...options,
+  }))
+}
+
+async function fetchApiEmpty(path, options = {}) {
+  const response = await fetch(apiUrl(path), {
+    credentials: 'include',
+    ...options,
+  })
+
+  if (!response.ok) {
+    throw new Error(`Request failed with ${response.status}`)
+  }
+}
+
+function shouldFallback(error) {
+  if (!canUseBrowserFallback()) throw error
+  return true
+}
 
 function createId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -61,6 +106,16 @@ function openDatabase() {
 }
 
 export async function getUploadedMaterials({ courseId, meetingId }) {
+  if (shouldUseServerApi()) {
+    try {
+      const params = new URLSearchParams({ courseId, meetingId: String(meetingId) })
+      const data = await fetchApiJson(`/api/materials?${params}`)
+      return data.materials ?? []
+    } catch (error) {
+      shouldFallback(error)
+    }
+  }
+
   const db = await openDatabase()
 
   try {
@@ -76,6 +131,24 @@ export async function getUploadedMaterials({ courseId, meetingId }) {
 }
 
 export async function saveUploadedMaterial({ courseId, meetingId, category, file }) {
+  if (shouldUseServerApi()) {
+    try {
+      const form = new FormData()
+      form.append('courseId', courseId)
+      form.append('meetingId', String(meetingId))
+      form.append('category', category)
+      form.append('file', file)
+
+      const data = await fetchApiJson('/api/materials', {
+        method: 'POST',
+        body: form,
+      })
+      return data.material
+    } catch (error) {
+      shouldFallback(error)
+    }
+  }
+
   const record = {
     id: `${meetingKey(courseId, meetingId)}:${category}:${createId()}`,
     meetingKey: meetingKey(courseId, meetingId),
@@ -102,6 +175,15 @@ export async function saveUploadedMaterial({ courseId, meetingId, category, file
 }
 
 export async function deleteUploadedMaterial(id) {
+  if (shouldUseServerApi()) {
+    try {
+      await fetchApiEmpty(`/api/materials/${encodeURIComponent(id)}`, { method: 'DELETE' })
+      return
+    } catch (error) {
+      shouldFallback(error)
+    }
+  }
+
   const db = await openDatabase()
 
   try {
@@ -113,6 +195,16 @@ export async function deleteUploadedMaterial(id) {
 }
 
 export async function getDeletedMaterialIds({ courseId, meetingId }) {
+  if (shouldUseServerApi()) {
+    try {
+      const params = new URLSearchParams({ courseId, meetingId: String(meetingId) })
+      const data = await fetchApiJson(`/api/deleted-materials?${params}`)
+      return data.materialIds ?? []
+    } catch (error) {
+      shouldFallback(error)
+    }
+  }
+
   const db = await openDatabase()
 
   try {
@@ -128,6 +220,19 @@ export async function getDeletedMaterialIds({ courseId, meetingId }) {
 }
 
 export async function saveDeletedMaterial({ courseId, meetingId, category, materialId }) {
+  if (shouldUseServerApi()) {
+    try {
+      const data = await fetchApiJson('/api/deleted-materials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ courseId, meetingId, category, materialId }),
+      })
+      return data.deletedMaterial
+    } catch (error) {
+      shouldFallback(error)
+    }
+  }
+
   const record = {
     id: deletedMaterialKey({ courseId, meetingId, category, materialId }),
     meetingKey: meetingKey(courseId, meetingId),
@@ -150,6 +255,16 @@ export async function saveDeletedMaterial({ courseId, meetingId, category, mater
 }
 
 export async function getMeetingRequests({ courseId, meetingId }) {
+  if (shouldUseServerApi()) {
+    try {
+      const params = new URLSearchParams({ courseId, meetingId: String(meetingId) })
+      const data = await fetchApiJson(`/api/requests?${params}`)
+      return data.requests ?? []
+    } catch (error) {
+      shouldFallback(error)
+    }
+  }
+
   const db = await openDatabase()
 
   try {
@@ -165,6 +280,27 @@ export async function getMeetingRequests({ courseId, meetingId }) {
 }
 
 export async function saveMeetingRequest({ courseId, meetingId, text, reviewInClass, file }) {
+  if (shouldUseServerApi()) {
+    try {
+      const form = new FormData()
+      form.append('courseId', courseId)
+      form.append('meetingId', String(meetingId))
+      form.append('text', text)
+      form.append('reviewInClass', reviewInClass ? 'true' : 'false')
+      if (file) {
+        form.append('file', file)
+      }
+
+      const data = await fetchApiJson('/api/requests', {
+        method: 'POST',
+        body: form,
+      })
+      return data.request
+    } catch (error) {
+      shouldFallback(error)
+    }
+  }
+
   const record = {
     id: `${meetingKey(courseId, meetingId)}:request:${createId()}`,
     meetingKey: meetingKey(courseId, meetingId),
@@ -191,6 +327,15 @@ export async function saveMeetingRequest({ courseId, meetingId, text, reviewInCl
 }
 
 export async function deleteMeetingRequest(id) {
+  if (shouldUseServerApi()) {
+    try {
+      await fetchApiEmpty(`/api/requests/${encodeURIComponent(id)}`, { method: 'DELETE' })
+      return
+    } catch (error) {
+      shouldFallback(error)
+    }
+  }
+
   const db = await openDatabase()
 
   try {

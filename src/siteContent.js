@@ -1,4 +1,7 @@
 const STORAGE_KEY = 'marathon-content-overrides'
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
+const CONTENT_BACKEND = import.meta.env.VITE_CONTENT_BACKEND ?? 'api'
+const CONTENT_POLL_MS = Number(import.meta.env.VITE_CONTENT_POLL_MS ?? 10000)
 
 function createId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -30,6 +33,65 @@ export function persistContentOverrides(overrides) {
   if (typeof localStorage === 'undefined') return
 
   localStorage.setItem(STORAGE_KEY, JSON.stringify(overrides))
+}
+
+function apiUrl(path) {
+  return `${API_BASE_URL}${path}`
+}
+
+function shouldUseRemoteContent() {
+  return CONTENT_BACKEND !== 'local'
+}
+
+async function readJsonResponse(response) {
+  if (!response.ok) {
+    throw new Error(`Request failed with ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function loadRemoteContentOverrides({ signal } = {}) {
+  if (!shouldUseRemoteContent()) return null
+
+  const data = await readJsonResponse(await fetch(apiUrl('/api/content'), {
+    credentials: 'include',
+    signal,
+  }))
+
+  return data.overrides ?? {}
+}
+
+export async function persistRemoteContentOverrides(overrides) {
+  if (!shouldUseRemoteContent()) return null
+
+  return readJsonResponse(await fetch(apiUrl('/api/content'), {
+    method: 'PUT',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ overrides }),
+  }))
+}
+
+export function subscribeToRemoteContentChanges(onChange) {
+  if (!shouldUseRemoteContent() || typeof EventSource === 'undefined') {
+    return () => {}
+  }
+
+  const events = new EventSource(apiUrl('/api/content/events'), { withCredentials: true })
+  events.onmessage = () => onChange()
+  events.onerror = () => {}
+
+  return () => events.close()
+}
+
+export function createContentPolling(onChange) {
+  if (!shouldUseRemoteContent() || !CONTENT_POLL_MS) {
+    return () => {}
+  }
+
+  const interval = window.setInterval(onChange, CONTENT_POLL_MS)
+  return () => window.clearInterval(interval)
 }
 
 export function applyContentOverrides(courses, overrides) {

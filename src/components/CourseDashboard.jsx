@@ -8,20 +8,24 @@ import {
   addCustomCourseOverride,
   addMeetingOverride,
   applyContentOverrides,
+  createContentPolling,
   createBlankMeeting,
   createDuplicatedCourse,
   createDuplicatedMeeting,
   deleteCourseOverride,
   deleteMeetingOverride,
   loadContentOverrides,
+  loadRemoteContentOverrides,
   persistContentOverrides,
+  persistRemoteContentOverrides,
   setCourseLockedOverride,
+  subscribeToRemoteContentChanges,
   updateCourseOverride,
   updateMeetingOverride,
 } from '../siteContent'
 
-const ADMIN_ACCESS_STORAGE_KEY = 'marathon-admin-access'
-const ADMIN_MODE_STORAGE_KEY = 'marathon-admin-mode'
+const APP_ROLE = import.meta.env.VITE_APP_ROLE === 'admin' ? 'admin' : 'student'
+const IS_ADMIN_DEPLOYMENT = APP_ROLE === 'admin'
 
 const colorStyles = {
   sky: {
@@ -47,20 +51,17 @@ function toDatetimeLocal(value) {
   return value ? value.slice(0, 16) : ''
 }
 
-function persistAdminMode(enabled) {
-  try {
-    localStorage.setItem(ADMIN_MODE_STORAGE_KEY, enabled ? 'true' : 'false')
-  } catch {
-    // Ignore private browsing or blocked storage.
-  }
+function formatJson(value) {
+  return JSON.stringify(value ?? [], null, 2)
 }
 
-function persistAdminAccess(enabled) {
-  try {
-    localStorage.setItem(ADMIN_ACCESS_STORAGE_KEY, enabled ? 'true' : 'false')
-  } catch {
-    // Ignore private browsing or blocked storage.
+function parseJsonArray(label, value) {
+  const parsed = JSON.parse(value)
+  if (!Array.isArray(parsed)) {
+    throw new Error(`${label} חייב להיות מערך JSON`)
   }
+
+  return parsed
 }
 
 function clearModeQueryParams() {
@@ -72,7 +73,7 @@ function clearModeQueryParams() {
   window.history.replaceState(null, '', url)
 }
 
-function getRequestedAdminMode() {
+function isStudentViewRequested() {
   if (typeof window === 'undefined') return null
 
   const params = new URLSearchParams(window.location.search)
@@ -80,36 +81,14 @@ function getRequestedAdminMode() {
   const studentParam = params.get('student')
 
   if (studentParam === '1' || studentParam === 'true' || adminParam === '0') {
-    return false
-  }
-
-  if (adminParam === '1' || adminParam === 'true' || (params.has('admin') && adminParam !== '0')) {
     return true
   }
 
-  return null
+  return false
 }
 
 function getInitialAdminMode() {
-  const requestedMode = getRequestedAdminMode()
-  if (requestedMode !== null) return requestedMode
-
-  try {
-    return localStorage.getItem(ADMIN_MODE_STORAGE_KEY) === 'true'
-  } catch {
-    return false
-  }
-}
-
-function getInitialAdminAccess() {
-  const requestedMode = getRequestedAdminMode()
-  if (requestedMode === true) return true
-
-  try {
-    return localStorage.getItem(ADMIN_ACCESS_STORAGE_KEY) === 'true'
-  } catch {
-    return false
-  }
+  return IS_ADMIN_DEPLOYMENT && !isStudentViewRequested()
 }
 
 function IconButtonSvg({ path, className = 'h-4 w-4' }) {
@@ -163,7 +142,7 @@ function ModeToolbar({
   isAdminMode,
   onAdminView,
   onExport,
-  onForgetAdminAccess,
+  syncStatus,
   onStudentView,
 }) {
   return (
@@ -174,6 +153,15 @@ function ModeToolbar({
           <span className="text-sm font-semibold text-slate-700">
             {isAdminMode ? 'מצב ניהול פעיל' : 'תצוגת סטודנט פעילה'}
           </span>
+          {syncStatus && (
+            <span className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
+              syncStatus.type === 'error'
+                ? 'bg-rose-50 text-rose-600 ring-1 ring-rose-100'
+                : 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100'
+            }`}>
+              {syncStatus.text}
+            </span>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 shadow-sm">
@@ -212,13 +200,6 @@ function ModeToolbar({
               ייצוא עריכות
             </button>
           )}
-          <button
-            type="button"
-            onClick={onForgetAdminAccess}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-500 shadow-sm transition-colors hover:border-slate-300 hover:text-slate-700 cursor-pointer"
-          >
-            הסתר סרגל
-          </button>
         </div>
       </div>
     </div>
@@ -241,6 +222,9 @@ function CourseEditor({
     name: course.name,
     subtitle: course.subtitle,
     nextSession: toDatetimeLocal(course.nextSession),
+    recordings: formatJson(course.recordings),
+    deadlines: formatJson(course.deadlines),
+    resources: formatJson(course.resources),
   })
   const [status, setStatus] = useState(null)
 
@@ -252,12 +236,28 @@ function CourseEditor({
     event.preventDefault()
     if (!canEditContent) return
 
+    let recordings
+    let deadlines
+    let resources
+
+    try {
+      recordings = parseJsonArray('הקלטות', form.recordings)
+      deadlines = parseJsonArray('תאריכים חשובים', form.deadlines)
+      resources = parseJsonArray('קישורים מהירים', form.resources)
+    } catch (error) {
+      setStatus({ type: 'error', text: error.message })
+      return
+    }
+
     onSave({
       name: form.name.trim(),
       subtitle: form.subtitle.trim(),
       nextSession: form.nextSession,
+      recordings,
+      deadlines,
+      resources,
     })
-    setStatus('פרטי הקורס נשמרו')
+    setStatus({ type: 'success', text: 'פרטי הקורס נשמרו' })
   }
 
   return (
@@ -310,6 +310,43 @@ function CourseEditor({
             />
           </label>
         </div>
+        <details className="mt-4 rounded-xl border border-slate-100 bg-white p-4">
+          <summary className="cursor-pointer text-xs font-semibold text-slate-500">
+            עריכה מתקדמת: הקלטות, תאריכים וקישורים
+          </summary>
+          <div className="mt-4 grid gap-3 lg:grid-cols-3">
+            <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+              הקלטות
+              <textarea
+                dir="ltr"
+                value={form.recordings}
+                onChange={(event) => updateField('recordings', event.target.value)}
+                rows={10}
+                className="mt-1.5 w-full resize-y rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-mono font-normal leading-relaxed text-slate-700 outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+              />
+            </label>
+            <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+              תאריכים חשובים
+              <textarea
+                dir="ltr"
+                value={form.deadlines}
+                onChange={(event) => updateField('deadlines', event.target.value)}
+                rows={10}
+                className="mt-1.5 w-full resize-y rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-mono font-normal leading-relaxed text-slate-700 outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+              />
+            </label>
+            <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+              קישורים מהירים
+              <textarea
+                dir="ltr"
+                value={form.resources}
+                onChange={(event) => updateField('resources', event.target.value)}
+                rows={10}
+                className="mt-1.5 w-full resize-y rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-mono font-normal leading-relaxed text-slate-700 outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+              />
+            </label>
+          </div>
+        </details>
       </fieldset>
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -365,7 +402,11 @@ function CourseEditor({
           <TrashIcon />
           מחק קבוצה
         </button>
-        {status && <span className="text-xs text-emerald-600">{status}</span>}
+        {status && (
+          <span className={`text-xs ${status.type === 'error' ? 'text-rose-600' : 'text-emerald-600'}`}>
+            {status.text}
+          </span>
+        )}
       </div>
     </form>
   )
@@ -375,9 +416,10 @@ export default function CourseDashboard() {
   const [activeCourseId, setActiveCourseId] = useState(courses[0].id)
   const [activeContent, setActiveContent] = useState('meetings')
   const [contentOverrides, setContentOverrides] = useState(loadContentOverrides)
-  const [hasAdminAccess, setHasAdminAccess] = useState(getInitialAdminAccess)
   const [isAdminMode, setIsAdminMode] = useState(getInitialAdminMode)
   const [focusedMeetingId, setFocusedMeetingId] = useState(null)
+  const [contentSyncStatus, setContentSyncStatus] = useState(null)
+  const [remoteRefreshToken, setRemoteRefreshToken] = useState(0)
 
   const editableCourses = useMemo(
     () => applyContentOverrides(courses, contentOverrides),
@@ -387,43 +429,72 @@ export default function CourseDashboard() {
   const course = visibleCourses.find((c) => c.id === activeCourseId) ?? visibleCourses[0]
   const styles = colorStyles[course.color] ?? colorStyles.sky
   const isCourseLocked = Boolean(course.locked)
-  const canEditContent = isAdminMode && !isCourseLocked
+  const canEditContent = IS_ADMIN_DEPLOYMENT && isAdminMode && !isCourseLocked
 
   useEffect(() => {
-    const requestedMode = getRequestedAdminMode()
-    if (requestedMode === null) return
+    let ignore = false
 
-    if (requestedMode) {
-      persistAdminAccess(true)
+    async function refreshRemoteContent() {
+      try {
+        const remoteOverrides = await loadRemoteContentOverrides()
+        if (ignore || remoteOverrides === null) return
+
+        setContentOverrides(remoteOverrides)
+        persistContentOverrides(remoteOverrides)
+        setContentSyncStatus(null)
+      } catch {
+        if (!ignore && IS_ADMIN_DEPLOYMENT) {
+          setContentSyncStatus({
+            type: 'error',
+            text: 'אין חיבור לתוכן המשותף',
+          })
+        }
+      }
     }
-    persistAdminMode(requestedMode)
+
+    function handleRemoteChange() {
+      setRemoteRefreshToken((current) => current + 1)
+      refreshRemoteContent()
+    }
+
+    refreshRemoteContent()
+    const unsubscribeEvents = subscribeToRemoteContentChanges(handleRemoteChange)
+    const stopPolling = createContentPolling(handleRemoteChange)
+    window.addEventListener('focus', handleRemoteChange)
     clearModeQueryParams()
+
+    return () => {
+      ignore = true
+      unsubscribeEvents()
+      stopPolling()
+      window.removeEventListener('focus', handleRemoteChange)
+    }
   }, [])
 
   function saveOverrides(update) {
-    setContentOverrides((current) => {
-      const next = update(current)
-      persistContentOverrides(next)
-      return next
-    })
+    if (!IS_ADMIN_DEPLOYMENT) return
+
+    const next = update(contentOverrides)
+    setContentOverrides(next)
+    persistContentOverrides(next)
+    setContentSyncStatus({ type: 'success', text: 'שומר...' })
+
+    persistRemoteContentOverrides(next)
+      .then(() => setContentSyncStatus({ type: 'success', text: 'נשמר לסטודנטים' }))
+      .catch(() => setContentSyncStatus({
+        type: 'error',
+        text: 'השינוי לא נשמר לסטודנטים',
+      }))
   }
 
   function setAdminMode(enabled) {
-    if (enabled) {
-      persistAdminAccess(true)
-      setHasAdminAccess(true)
+    if (!IS_ADMIN_DEPLOYMENT) {
+      setIsAdminMode(false)
+      return
     }
-    persistAdminMode(enabled)
+
     clearModeQueryParams()
     setIsAdminMode(enabled)
-  }
-
-  function forgetAdminAccess() {
-    persistAdminAccess(false)
-    persistAdminMode(false)
-    clearModeQueryParams()
-    setHasAdminAccess(false)
-    setIsAdminMode(false)
   }
 
   function handleExportContent() {
@@ -510,12 +581,12 @@ export default function CourseDashboard() {
   return (
     <div className="min-h-screen bg-[#fafbfd]">
       <Header course={course} />
-      {(hasAdminAccess || isAdminMode) && (
+      {IS_ADMIN_DEPLOYMENT && (
         <ModeToolbar
           isAdminMode={isAdminMode}
           onAdminView={() => setAdminMode(true)}
           onExport={handleExportContent}
-          onForgetAdminAccess={forgetAdminAccess}
+          syncStatus={contentSyncStatus}
           onStudentView={() => setAdminMode(false)}
         />
       )}
@@ -589,6 +660,7 @@ export default function CourseDashboard() {
                 onDeleteMeeting={handleDeleteMeeting}
                 onDuplicateMeeting={handleDuplicateMeeting}
                 onUpdateMeeting={handleUpdateMeeting}
+                refreshToken={remoteRefreshToken}
               />
             )}
             {activeContent === 'recordings' && <RecordingsSection course={course} />}
