@@ -15,6 +15,14 @@ function cloneContent(value) {
   return JSON.parse(JSON.stringify(value))
 }
 
+function hasOwnKeys(value) {
+  return Boolean(value && typeof value === 'object' && Object.keys(value).length > 0)
+}
+
+function hasItems(value) {
+  return Array.isArray(value) && value.length > 0
+}
+
 function readStorage() {
   if (typeof localStorage === 'undefined') return {}
 
@@ -33,6 +41,64 @@ export function persistContentOverrides(overrides) {
   if (typeof localStorage === 'undefined') return
 
   localStorage.setItem(STORAGE_KEY, JSON.stringify(overrides))
+}
+
+export function hasContentOverrides(overrides) {
+  if (!hasOwnKeys(overrides)) return false
+
+  return Object.entries(overrides).some(([key, value]) => {
+    if (key === 'customCourses' || key === 'deletedCourseIds') {
+      return hasItems(value)
+    }
+
+    if (!value || typeof value !== 'object') return false
+
+    return (
+      hasOwnKeys(value.course) ||
+      hasOwnKeys(value.meetings) ||
+      hasItems(value.customMeetings) ||
+      hasItems(value.deletedMeetingIds)
+    )
+  })
+}
+
+export function mergeLocalContentIntoRemote(remoteOverrides, localOverrides) {
+  if (!hasContentOverrides(localOverrides)) return remoteOverrides ?? {}
+  if (!hasContentOverrides(remoteOverrides)) return cloneContent(localOverrides)
+
+  const next = cloneContent(remoteOverrides)
+  const remoteCustomCourses = Array.isArray(next.customCourses) ? next.customCourses : []
+  const remoteCustomCourseIds = new Set(remoteCustomCourses.map((course) => String(course.id)))
+  const remoteDeletedCourseIds = new Set((next.deletedCourseIds ?? []).map(String))
+  const localCustomCourses = Array.isArray(localOverrides.customCourses) ? localOverrides.customCourses : []
+  let changed = false
+
+  localCustomCourses.forEach((course) => {
+    const courseId = String(course.id)
+    if (remoteCustomCourseIds.has(courseId) || remoteDeletedCourseIds.has(courseId)) return
+
+    remoteCustomCourses.push(cloneContent(course))
+    remoteCustomCourseIds.add(courseId)
+    changed = true
+
+    if (localOverrides[course.id] && !next[course.id]) {
+      next[course.id] = cloneContent(localOverrides[course.id])
+    }
+  })
+
+  Object.entries(localOverrides).forEach(([courseId, courseOverride]) => {
+    if (courseId === 'customCourses' || courseId === 'deletedCourseIds') return
+    if (next[courseId] || !hasContentOverrides({ [courseId]: courseOverride })) return
+
+    next[courseId] = cloneContent(courseOverride)
+    changed = true
+  })
+
+  if (changed) {
+    next.customCourses = remoteCustomCourses
+  }
+
+  return changed ? next : remoteOverrides
 }
 
 function apiUrl(path) {

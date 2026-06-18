@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Header from './Header'
 import MeetingsSection from './MeetingsSection'
 import RecordingsSection from './RecordingsSection'
@@ -16,6 +16,7 @@ import {
   deleteMeetingOverride,
   loadContentOverrides,
   loadRemoteContentOverrides,
+  mergeLocalContentIntoRemote,
   persistContentOverrides,
   persistRemoteContentOverrides,
   setCourseLockedOverride,
@@ -420,6 +421,7 @@ export default function CourseDashboard() {
   const [focusedMeetingId, setFocusedMeetingId] = useState(null)
   const [contentSyncStatus, setContentSyncStatus] = useState(null)
   const [remoteRefreshToken, setRemoteRefreshToken] = useState(0)
+  const contentOverridesRef = useRef(contentOverrides)
 
   const editableCourses = useMemo(
     () => applyContentOverrides(courses, contentOverrides),
@@ -432,6 +434,10 @@ export default function CourseDashboard() {
   const canEditContent = IS_ADMIN_DEPLOYMENT && isAdminMode && !isCourseLocked
 
   useEffect(() => {
+    contentOverridesRef.current = contentOverrides
+  }, [contentOverrides])
+
+  useEffect(() => {
     let ignore = false
 
     async function refreshRemoteContent() {
@@ -439,8 +445,25 @@ export default function CourseDashboard() {
         const remoteOverrides = await loadRemoteContentOverrides()
         if (ignore || remoteOverrides === null) return
 
-        setContentOverrides(remoteOverrides)
-        persistContentOverrides(remoteOverrides)
+        const localOverrides = loadContentOverrides()
+        const mergedOverrides = IS_ADMIN_DEPLOYMENT
+          ? mergeLocalContentIntoRemote(remoteOverrides, localOverrides)
+          : remoteOverrides
+        const recoveredLocalChanges = IS_ADMIN_DEPLOYMENT && mergedOverrides !== remoteOverrides
+
+        contentOverridesRef.current = mergedOverrides
+        setContentOverrides(mergedOverrides)
+        persistContentOverrides(mergedOverrides)
+
+        if (recoveredLocalChanges) {
+          setContentSyncStatus({ type: 'success', text: 'משחזר קבוצות מקומיות...' })
+          await persistRemoteContentOverrides(mergedOverrides)
+          if (!ignore) {
+            setContentSyncStatus({ type: 'success', text: 'הקבוצות שוחזרו לסטודנטים' })
+          }
+          return
+        }
+
         setContentSyncStatus(null)
       } catch {
         if (!ignore && IS_ADMIN_DEPLOYMENT) {
@@ -474,7 +497,8 @@ export default function CourseDashboard() {
   function saveOverrides(update) {
     if (!IS_ADMIN_DEPLOYMENT) return
 
-    const next = update(contentOverrides)
+    const next = update(contentOverridesRef.current)
+    contentOverridesRef.current = next
     setContentOverrides(next)
     persistContentOverrides(next)
     setContentSyncStatus({ type: 'success', text: 'שומר...' })
