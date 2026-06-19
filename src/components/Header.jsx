@@ -1,75 +1,129 @@
-const gradients = {
-  sky: 'from-sky-600 via-blue-600 to-indigo-700',
-  violet: 'from-violet-600 via-purple-600 to-indigo-700',
-  emerald: 'from-emerald-600 via-teal-600 to-cyan-700',
+const accents = {
+  sky: {
+    glow: 'rgba(56,189,248,0.22)',
+    mark: 'text-sky-300',
+    markRing: 'ring-sky-400/25',
+    line: 'from-sky-400/0 via-sky-400/60 to-sky-400/0',
+    chipText: 'text-sky-200',
+    subtitle: 'text-slate-300/80',
+  },
+  violet: {
+    glow: 'rgba(167,139,250,0.22)',
+    mark: 'text-violet-300',
+    markRing: 'ring-violet-400/25',
+    line: 'from-violet-400/0 via-violet-400/60 to-violet-400/0',
+    chipText: 'text-violet-200',
+    subtitle: 'text-slate-300/80',
+  },
+  emerald: {
+    glow: 'rgba(45,212,191,0.22)',
+    mark: 'text-teal-300',
+    markRing: 'ring-teal-400/25',
+    line: 'from-teal-400/0 via-teal-400/60 to-teal-400/0',
+    chipText: 'text-teal-200',
+    subtitle: 'text-slate-300/80',
+  },
 }
 
-const badgeColors = {
-  sky: 'text-sky-100',
-  violet: 'text-violet-100',
-  emerald: 'text-emerald-100',
-}
-
-const subtitleColors = {
-  sky: 'text-sky-200/80',
-  violet: 'text-violet-200/80',
-  emerald: 'text-emerald-200/80',
-}
-
-function BooksIllustration() {
+function CalendarGlyph() {
   return (
-    <div className="flex h-20 w-24 flex-shrink-0 items-center justify-center rounded-2xl border border-white/15 bg-white/10 shadow-2xl shadow-black/10 backdrop-blur-sm md:h-24 md:w-28">
-      <svg aria-hidden="true" className="h-16 w-20 md:h-20 md:w-24" viewBox="0 0 96 78" fill="none">
-        <path d="M18 59.5h58.5a5.5 5.5 0 0 1 0 11H18a5.5 5.5 0 0 1 0-11Z" fill="white" opacity=".18" />
-        <rect x="15" y="22" width="16" height="42" rx="4" transform="rotate(-8 15 22)" fill="#F97316" />
-        <rect x="17.5" y="27" width="10" height="3" rx="1.5" transform="rotate(-8 17.5 27)" fill="#FFEDD5" />
-        <rect x="32" y="15" width="17" height="50" rx="4" fill="#38BDF8" />
-        <rect x="35.5" y="21" width="10" height="3" rx="1.5" fill="#E0F2FE" />
-        <rect x="51" y="24" width="16" height="42" rx="4" transform="rotate(7 51 24)" fill="#A78BFA" />
-        <rect x="55" y="30" width="9" height="3" rx="1.5" transform="rotate(7 55 30)" fill="#F5F3FF" />
-        <path d="M60.5 16.5c7.5-1.7 15 .8 19.5 6.5v36c-5.4-4.9-12.2-6.6-19.5-5.1v-37.4Z" fill="white" opacity=".92" />
-        <path d="M60.5 16.5c-7.5-1.7-15 .8-19.5 6.5v36c5.4-4.9 12.2-6.6 19.5-5.1v-37.4Z" fill="#F8FAFC" opacity=".92" />
-        <path d="M60.5 18v36" stroke="#CBD5E1" strokeWidth="2" strokeLinecap="round" />
-        <path d="M46.5 29.5c2.9-1.6 6-2.3 9.5-2.2M46.5 38c2.9-1.6 6-2.3 9.5-2.2M65 28c3.4-.6 6.4-.2 9 1.1M65 36.5c3.4-.6 6.4-.2 9 1.1" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round" />
-      </svg>
-    </div>
+    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.6">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
+    </svg>
   )
 }
 
+function StackGlyph() {
+  return (
+    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.6">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75 12 3l8.25 3.75L12 10.5 3.75 6.75ZM3.75 12 12 15.75 20.25 12M3.75 17.25 12 21l8.25-3.75" />
+    </svg>
+  )
+}
+
+function formatNextSession(value) {
+  if (!value) return null
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+
+  return new Intl.DateTimeFormat('he-IL', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
+}
+
 export default function Header({ course }) {
-  const color = gradients[course.color] ? course.color : 'sky'
-  const gradient = gradients[color]
+  const color = accents[course.color] ? course.color : 'sky'
+  const accent = accents[color]
+  const nextSession = formatNextSession(course.nextSession)
 
   return (
-    <header className={`relative overflow-hidden bg-gradient-to-l ${gradient}`}>
-      <div className="pointer-events-none absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSIyMCIgY3k9IjIwIiByPSIxIiBmaWxsPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMDcpIi8+PC9zdmc+')] opacity-60" />
-      <div className="pointer-events-none absolute top-0 left-0 h-full w-1/2 bg-gradient-to-l from-transparent to-white/[0.04]" />
+    <header className="relative overflow-hidden bg-slate-950">
+      {/* technical line grid */}
+      <div className="pointer-events-none absolute inset-0 tech-grid" />
+      {/* accent glow */}
+      <div
+        className="pointer-events-none absolute -top-24 right-[-10%] h-80 w-[36rem] rounded-full blur-3xl"
+        style={{ background: `radial-gradient(circle, ${accent.glow}, transparent 70%)` }}
+      />
+      {/* fade to body */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-l from-transparent via-white/10 to-transparent" />
 
-      <div className="relative mx-auto max-w-7xl px-5 py-10 md:px-8 md:py-14">
-        <div className="mb-8 flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex min-w-0 items-center gap-4">
-            <BooksIllustration />
-            <h1 className="min-w-0 text-3xl font-extrabold leading-tight text-white md:text-4xl lg:text-5xl">
-              מרתון עם רן פקלר
-            </h1>
+      <div className="relative mx-auto max-w-7xl px-5 py-9 md:px-8 md:py-12">
+        {/* brand + live status row */}
+        <div className="mb-9 flex items-center justify-between gap-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className={`relative flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-white/[0.06] ring-1 ${accent.markRing} backdrop-blur-sm`}>
+              <span className={`font-mono text-lg font-bold ${accent.mark}`}>{course.icon}</span>
+            </div>
+            <div className="min-w-0 leading-tight">
+              <p className="truncate text-sm font-semibold text-white">מרתון עם רן פקלר</p>
+              <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-slate-400">Exam Prep</p>
+            </div>
+          </div>
+
+          <div className="flex flex-shrink-0 items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 backdrop-blur-sm">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
+            </span>
+            <span className={`text-xs font-medium ${accent.chipText}`}>פעיל</span>
           </div>
         </div>
 
-        <div className="inline-flex items-center gap-2 rounded-full bg-white/10 backdrop-blur-sm px-3.5 py-1.5 mb-4 border border-white/10">
-          <span className="relative flex h-2 w-2">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-300 opacity-75" />
-            <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
-          </span>
-          <span className={`text-xs font-medium ${badgeColors[color]}`}>
-            המרתון פעיל — {course.meetings.length} מפגשים
-          </span>
-        </div>
-
-        <h2 className="text-2xl font-extrabold text-white md:text-3xl lg:text-4xl">
+        {/* course title */}
+        <h1 className="text-3xl font-bold tracking-tight text-white md:text-4xl lg:text-[2.75rem] lg:leading-[1.1]">
           {course.name}
-        </h2>
-        <p className={`mt-2.5 text-base ${subtitleColors[color]} max-w-xl`}>{course.subtitle}</p>
+        </h1>
+        <p className={`mt-3 max-w-xl text-[15px] leading-relaxed ${accent.subtitle}`}>
+          {course.subtitle}
+        </p>
+
+        {/* meta strip */}
+        <div className="mt-7 flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-slate-400">
+          <span className="flex items-center gap-1.5">
+            <StackGlyph />
+            <span className="font-mono tabular-nums text-slate-300">{course.meetings.length}</span>
+            מפגשים
+          </span>
+          {nextSession && (
+            <>
+              <span className="hidden h-3 w-px bg-white/10 sm:block" />
+              <span className="flex items-center gap-1.5">
+                <CalendarGlyph />
+                המפגש הבא
+                <span className="font-mono text-slate-300">{nextSession}</span>
+              </span>
+            </>
+          )}
+        </div>
       </div>
+
+      {/* accent baseline */}
+      <div className={`h-px w-full bg-gradient-to-l ${accent.line}`} />
     </header>
   )
 }

@@ -16,16 +16,10 @@ function daysUntil(dateStr) {
   return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)))
 }
 
-const countdownGradients = {
-  sky: 'from-sky-600 via-blue-600 to-indigo-700 shadow-sky-200/30',
-  violet: 'from-violet-600 via-purple-600 to-indigo-700 shadow-violet-200/30',
-  emerald: 'from-emerald-600 via-teal-600 to-cyan-700 shadow-emerald-200/30',
-}
-
-const countdownLabel = {
-  sky: 'text-sky-200',
-  violet: 'text-violet-200',
-  emerald: 'text-emerald-200',
+const countdownAccent = {
+  sky: { glow: 'rgba(56,189,248,0.18)', digit: 'text-sky-300', label: 'text-slate-400' },
+  violet: { glow: 'rgba(167,139,250,0.18)', digit: 'text-violet-300', label: 'text-slate-400' },
+  emerald: { glow: 'rgba(45,212,191,0.18)', digit: 'text-teal-300', label: 'text-slate-400' },
 }
 
 const iconMap = {
@@ -43,47 +37,63 @@ export default function Sidebar({ course }) {
   }, [])
 
   const timeLeft = getTimeLeft(course.nextSession, now)
+  const accent = countdownAccent[course.color] ?? countdownAccent.sky
 
   return (
     <div className="w-full lg:w-80 flex-shrink-0 space-y-4">
       {timeLeft && (
-        <div className={`rounded-2xl bg-gradient-to-br ${countdownGradients[course.color]} p-5 text-white shadow-lg animate-fade-in-up`}>
-          <p className={`text-xs font-medium ${countdownLabel[course.color]} mb-3`}>המפגש הבא מתחיל בעוד</p>
-          <div className="grid grid-cols-4 gap-2 text-center">
-            {[
-              { v: timeLeft.days, l: 'ימים' },
-              { v: timeLeft.hours, l: 'שעות' },
-              { v: timeLeft.minutes, l: 'דקות' },
-              { v: timeLeft.seconds, l: 'שניות' },
-            ].map((item) => (
-              <div key={item.l} className="rounded-xl bg-white/15 backdrop-blur-sm py-2.5">
-                <div className="text-xl font-bold font-mono tabular-nums leading-none">
-                  {String(item.v).padStart(2, '0')}
+        <div className="relative overflow-hidden rounded-2xl bg-slate-950 p-5 shadow-pop animate-fade-in-up">
+          <div className="pointer-events-none absolute inset-0 tech-grid opacity-70" />
+          <div
+            className="pointer-events-none absolute -top-16 left-[-20%] h-40 w-48 rounded-full blur-3xl"
+            style={{ background: `radial-gradient(circle, ${accent.glow}, transparent 70%)` }}
+          />
+          <div className="relative">
+            <p className={`mb-3 flex items-center gap-1.5 text-xs font-medium ${accent.label}`}>
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
+                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
+              </span>
+              המפגש הבא מתחיל בעוד
+            </p>
+            <div className="grid grid-cols-4 gap-2 text-center">
+              {[
+                { v: timeLeft.days, l: 'ימים' },
+                { v: timeLeft.hours, l: 'שעות' },
+                { v: timeLeft.minutes, l: 'דקות' },
+                { v: timeLeft.seconds, l: 'שניות' },
+              ].map((item) => (
+                <div key={item.l} className="rounded-xl border border-white/10 bg-white/[0.04] py-2.5">
+                  <div className={`text-2xl font-bold font-mono tabular-nums leading-none ${accent.digit}`}>
+                    {String(item.v).padStart(2, '0')}
+                  </div>
+                  <div className={`mt-1.5 text-[10px] ${accent.label}`}>{item.l}</div>
                 </div>
-                <div className={`text-[10px] ${countdownLabel[course.color]} mt-1.5`}>{item.l}</div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         </div>
       )}
 
       {course.deadlines.length > 0 && (
-        <div className="rounded-2xl bg-white p-5 border border-slate-100 shadow-[0_1px_3px_rgba(0,0,0,0.04)] animate-fade-in-up" style={{ animationDelay: '60ms' }}>
-          <h3 className="text-sm font-semibold text-slate-800 mb-3">תאריכים חשובים</h3>
-          <div className="space-y-2.5">
+        <div className="rounded-2xl bg-white p-5 border border-slate-200/70 shadow-card animate-fade-in-up" style={{ animationDelay: '60ms' }}>
+          <h3 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
+            תאריכים חשובים
+          </h3>
+          <div className="space-y-2">
             {course.deadlines.map((d) => {
               const days = daysUntil(d.date)
               const isUrgent = days <= 14
               return (
-                <div key={d.id} className="flex items-center justify-between rounded-xl bg-slate-50 p-3 border border-slate-100">
+                <div key={d.id} className="flex items-center justify-between rounded-xl bg-slate-50/80 p-3 border border-slate-200/60">
                   <div>
-                    <p className="text-sm font-medium text-slate-700">{d.label}</p>
+                    <p className="text-sm font-medium text-slate-800">{d.label}</p>
                     <p className="text-[11px] text-slate-400 font-mono">{d.display}</p>
                   </div>
-                  <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium ${
+                  <span className={`rounded-md px-2 py-0.5 text-[11px] font-mono font-medium tabular-nums ${
                     isUrgent
                       ? 'bg-amber-50 text-amber-600 ring-1 ring-amber-200/60'
-                      : 'bg-slate-100 text-slate-500'
+                      : 'bg-white text-slate-500 ring-1 ring-slate-200/70'
                   }`}>
                     {days === 0 ? 'היום!' : `${days} ימים`}
                   </span>
@@ -94,8 +104,8 @@ export default function Sidebar({ course }) {
         </div>
       )}
 
-      <div className="rounded-2xl bg-white p-5 border border-slate-100 shadow-[0_1px_3px_rgba(0,0,0,0.04)] animate-fade-in-up" style={{ animationDelay: '120ms' }}>
-        <h3 className="text-sm font-semibold text-slate-800 mb-3">קישורים מהירים</h3>
+      <div className="rounded-2xl bg-white p-5 border border-slate-200/70 shadow-card animate-fade-in-up" style={{ animationDelay: '120ms' }}>
+        <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-400">קישורים מהירים</h3>
         <div className="space-y-2">
           {course.resources.map((r) => {
             const ic = iconMap[r.icon]
@@ -103,17 +113,20 @@ export default function Sidebar({ course }) {
               <a
                 key={r.id}
                 href={r.url}
-                className="group flex items-center gap-3 rounded-xl p-3 hover:bg-slate-50 transition-colors"
+                className="group flex items-center gap-3 rounded-xl border border-transparent p-2.5 transition-all hover:border-slate-200/70 hover:bg-slate-50"
               >
                 <div className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg ${ic.bg} ${ic.text}`}>
                   <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
                     <path strokeLinecap="round" strokeLinejoin="round" d={ic.path} />
                   </svg>
                 </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-slate-600 group-hover:text-sky-600 transition-colors truncate">{r.title}</p>
-                  <p className="text-[11px] text-slate-400 truncate">{r.description}</p>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-slate-700 transition-colors group-hover:text-slate-900">{r.title}</p>
+                  <p className="truncate text-[11px] text-slate-400">{r.description}</p>
                 </div>
+                <svg className="h-4 w-4 flex-shrink-0 text-slate-300 transition-all group-hover:text-slate-500 group-hover:-translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
+                </svg>
               </a>
             )
           })}

@@ -80,8 +80,8 @@ export default function MeetingsSection({
             <div
               className={`rounded-2xl bg-white border transition-all duration-300 ${
                 isExpanded
-                  ? 'border-sky-200 shadow-[0_4px_24px_rgba(14,165,233,0.08)] ring-1 ring-sky-100'
-                : 'border-slate-100 shadow-[0_1px_3px_rgba(0,0,0,0.04)] hover:shadow-[0_2px_12px_rgba(0,0,0,0.06)] hover:border-slate-200'
+                  ? 'border-slate-300 shadow-card-hover ring-1 ring-slate-200/70'
+                : 'border-slate-200/70 shadow-card hover:shadow-card-hover hover:border-slate-300'
               }`}
             >
               <div className="flex items-start justify-between gap-4 p-5 md:p-6">
@@ -90,15 +90,15 @@ export default function MeetingsSection({
                   onClick={() => setExpandedId(isExpanded ? null : m.id)}
                   className="flex min-w-0 flex-1 items-start gap-4 text-right cursor-pointer"
                 >
-                    <div className={`flex-shrink-0 flex h-11 w-11 items-center justify-center rounded-xl font-bold text-sm ${
+                    <div className={`flex-shrink-0 flex h-11 w-11 items-center justify-center rounded-xl font-mono text-sm font-semibold tabular-nums transition-colors ${
                       isExpanded
-                        ? 'bg-gradient-to-br from-sky-500 to-blue-600 text-white shadow-sm shadow-sky-200'
-                        : 'bg-gradient-to-br from-slate-50 to-slate-100 text-slate-600 ring-1 ring-slate-200/60'
+                        ? 'bg-slate-900 text-white'
+                        : 'bg-slate-50 text-slate-500 ring-1 ring-slate-200/70'
                     }`}>
-                      {i + 1}
+                      {String(i + 1).padStart(2, '0')}
                     </div>
                     <div className="min-w-0">
-                      <h3 className="text-base font-semibold text-slate-800 md:text-lg">{m.title}</h3>
+                      <h3 className="text-base font-semibold tracking-tight text-slate-900 md:text-lg">{m.title}</h3>
                       <p className="mt-1 text-sm text-slate-500 line-clamp-1">{m.description}</p>
                       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-400">
                         <span className="flex items-center gap-1.5">

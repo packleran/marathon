@@ -29,19 +29,14 @@ import {
 const APP_ROLE = import.meta.env.VITE_APP_ROLE === 'admin' ? 'admin' : 'student'
 const IS_ADMIN_DEPLOYMENT = APP_ROLE === 'admin'
 
-const colorStyles = {
-  sky: {
-    activeCourseTab: 'bg-gradient-to-b from-sky-500 to-blue-600 text-white shadow-sm shadow-sky-200/50',
-    activeContentTab: 'bg-gradient-to-b from-sky-500 to-blue-600 text-white shadow-sm shadow-blue-200',
-  },
-  violet: {
-    activeCourseTab: 'bg-gradient-to-b from-violet-500 to-purple-600 text-white shadow-sm shadow-violet-200/50',
-    activeContentTab: 'bg-gradient-to-b from-violet-500 to-purple-600 text-white shadow-sm shadow-violet-200',
-  },
-  emerald: {
-    activeCourseTab: 'bg-gradient-to-b from-emerald-500 to-teal-600 text-white shadow-sm shadow-emerald-200/50',
-    activeContentTab: 'bg-gradient-to-b from-emerald-500 to-teal-600 text-white shadow-sm shadow-emerald-200',
-  },
+// Active controls are near-monochrome (slate-900) for a refined, "tool" feel.
+// Per-course identity comes through as a subtle accent on the icon/dot.
+const ACTIVE_TAB = 'bg-slate-900 text-white shadow-sm'
+
+const courseAccents = {
+  sky: 'text-sky-500',
+  violet: 'text-violet-500',
+  emerald: 'text-emerald-500',
 }
 
 const contentTabs = [
@@ -355,7 +350,7 @@ function CourseEditor({
         <button
           type="submit"
           disabled={!canEditContent}
-          className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white shadow-sm shadow-sky-200 transition-colors hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+          className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
         >
           שמור פרטי קבוצה
         </button>
@@ -430,7 +425,6 @@ export default function CourseDashboard() {
   )
   const visibleCourses = editableCourses.length > 0 ? editableCourses : courses
   const course = visibleCourses.find((c) => c.id === activeCourseId) ?? visibleCourses[0]
-  const styles = colorStyles[course.color] ?? colorStyles.sky
   const isCourseLocked = Boolean(course.locked)
   const canEditContent = IS_ADMIN_DEPLOYMENT && isAdminMode && !isCourseLocked
 
@@ -634,7 +628,7 @@ export default function CourseDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-[#fafbfd]">
+    <div className="min-h-screen">
       <Header course={course} />
       {IS_ADMIN_DEPLOYMENT && (
         <ModeToolbar
@@ -648,37 +642,42 @@ export default function CourseDashboard() {
 
       <main className="mx-auto max-w-7xl px-5 py-8 md:px-8">
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-1.5 rounded-xl bg-white p-1.5 shadow-[0_1px_3px_rgba(0,0,0,0.04)] border border-slate-100 overflow-x-auto">
-            {visibleCourses.map((c) => (
-              <button
-                key={c.id}
-                onClick={() => handleSelectCourse(c.id)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all cursor-pointer whitespace-nowrap ${
-                  activeCourseId === c.id
-                    ? colorStyles[c.color].activeCourseTab
-                    : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
-                }`}
-              >
-                <span className="font-mono text-xs opacity-70">{c.icon}</span>
-                {c.name}
-                {c.locked && (
-                  <span className="opacity-80">
-                    <LockIcon />
+          <div className="flex items-center gap-1 rounded-xl bg-white p-1 shadow-card border border-slate-200/70 overflow-x-auto">
+            {visibleCourses.map((c) => {
+              const isActive = activeCourseId === c.id
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => handleSelectCourse(c.id)}
+                  className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium transition-all cursor-pointer whitespace-nowrap ${
+                    isActive
+                      ? ACTIVE_TAB
+                      : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
+                  }`}
+                >
+                  <span className={`font-mono text-xs ${isActive ? 'text-white/60' : courseAccents[c.color] ?? 'text-slate-400'}`}>
+                    {c.icon}
                   </span>
-                )}
-              </button>
-            ))}
+                  {c.name}
+                  {c.locked && (
+                    <span className="opacity-70">
+                      <LockIcon />
+                    </span>
+                  )}
+                </button>
+              )
+            })}
           </div>
 
-          <div className="flex items-center gap-1 rounded-lg bg-white p-1 shadow-[0_1px_3px_rgba(0,0,0,0.04)] border border-slate-100 w-fit">
+          <div className="flex items-center gap-1 rounded-xl bg-white p-1 shadow-card border border-slate-200/70 w-fit">
             {contentTabs.map((tab) => (
               <button
                 key={tab.key}
                 onClick={() => setActiveContent(tab.key)}
-                className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all cursor-pointer ${
+                className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all cursor-pointer ${
                   activeContent === tab.key
-                    ? styles.activeContentTab
-                    : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+                    ? ACTIVE_TAB
+                    : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
                 }`}
               >
                 {tab.label}

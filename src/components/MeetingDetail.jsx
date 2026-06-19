@@ -261,7 +261,7 @@ function MeetingEditor({ meeting, onSave }) {
         </label>
       </div>
       <div className="mt-4 flex items-center gap-3">
-        <button type="submit" className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white shadow-sm shadow-sky-200 transition-colors hover:bg-sky-700 cursor-pointer">
+        <button type="submit" className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-slate-800 cursor-pointer">
           שמור פרטי מפגש
         </button>
         {status && <span className="text-xs text-emerald-600">{status}</span>}
@@ -280,8 +280,9 @@ function OverviewTab({ canEditContent, meeting, onUpdateMeeting }) {
           {meeting.topics.map((topic) => (
             <span
               key={topic}
-              className="inline-flex items-center rounded-lg bg-gradient-to-b from-sky-50 to-blue-50 px-3 py-1.5 text-xs font-medium text-sky-700 ring-1 ring-sky-200/50"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 ring-1 ring-slate-200/70"
             >
+              <span className="font-mono text-slate-400">#</span>
               {topic}
             </span>
           ))}
@@ -785,7 +786,7 @@ function RequestsTab({ courseId, isAdminMode, meeting, refreshToken }) {
           <button
             type="submit"
             disabled={savingRequest}
-            className="inline-flex w-fit items-center justify-center gap-2 rounded-lg bg-sky-600 px-4 py-2 text-sm font-medium text-white shadow-sm shadow-sky-200 transition-colors hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
+            className="inline-flex w-fit items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
           >
             {savingRequest ? 'שומר...' : 'שלח בקשה'}
           </button>
@@ -882,7 +883,7 @@ export default function MeetingDetail({
               onClick={() => setActiveTab(tab.key)}
               className={`flex items-center gap-1.5 px-4 py-3 text-sm font-medium border-b-2 transition-all -mb-px cursor-pointer ${
                 activeTab === tab.key
-                  ? 'border-sky-500 text-sky-600'
+                  ? 'border-slate-900 text-slate-900'
                   : 'border-transparent text-slate-400 hover:text-slate-600'
               }`}
             >
