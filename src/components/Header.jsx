@@ -1,42 +1,19 @@
-const accents = {
-  sky: {
-    glow: 'rgba(56,189,248,0.22)',
-    mark: 'text-sky-300',
-    markRing: 'ring-sky-400/25',
-    line: 'from-sky-400/0 via-sky-400/60 to-sky-400/0',
-    chipText: 'text-sky-200',
-    subtitle: 'text-slate-300/80',
-  },
-  violet: {
-    glow: 'rgba(167,139,250,0.22)',
-    mark: 'text-violet-300',
-    markRing: 'ring-violet-400/25',
-    line: 'from-violet-400/0 via-violet-400/60 to-violet-400/0',
-    chipText: 'text-violet-200',
-    subtitle: 'text-slate-300/80',
-  },
-  emerald: {
-    glow: 'rgba(45,212,191,0.22)',
-    mark: 'text-teal-300',
-    markRing: 'ring-teal-400/25',
-    line: 'from-teal-400/0 via-teal-400/60 to-teal-400/0',
-    chipText: 'text-teal-200',
-    subtitle: 'text-slate-300/80',
-  },
-}
+import { courseGradientBar, getCourseTheme } from '../theme'
 
-function CalendarGlyph() {
+function CalendarGlyph({ stroke = 'currentColor', className = 'h-4 w-4' }) {
   return (
-    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.6">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke={stroke} strokeWidth="2" strokeLinecap="round">
+      <rect x="3" y="4" width="18" height="17" rx="2.5" />
+      <path d="M3 9h18M8 2v4M16 2v4" />
     </svg>
   )
 }
 
-function StackGlyph() {
+function StackGlyph({ className = 'h-4 w-4' }) {
   return (
-    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.6">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75 12 3l8.25 3.75L12 10.5 3.75 6.75ZM3.75 12 12 15.75 20.25 12M3.75 17.25 12 21l8.25-3.75" />
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="#8c93a4" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z" />
+      <path d="M12 12l8-4.5M12 12v9M12 12L4 7.5" />
     </svg>
   )
 }
@@ -56,74 +33,62 @@ function formatNextSession(value) {
 }
 
 export default function Header({ course }) {
-  const color = accents[course.color] ? course.color : 'sky'
-  const accent = accents[color]
+  const accent = getCourseTheme(course.color)
   const nextSession = formatNextSession(course.nextSession)
 
   return (
-    <header className="relative overflow-hidden bg-slate-950">
-      {/* technical line grid */}
-      <div className="pointer-events-none absolute inset-0 tech-grid" />
-      {/* accent glow */}
+    <header className="mx-auto max-w-7xl px-5 pt-6 md:px-8">
       <div
-        className="pointer-events-none absolute -top-24 right-[-10%] h-80 w-[36rem] rounded-full blur-3xl"
-        style={{ background: `radial-gradient(circle, ${accent.glow}, transparent 70%)` }}
-      />
-      {/* fade to body */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-l from-transparent via-white/10 to-transparent" />
+        className="relative overflow-hidden rounded-[20px] border border-border shadow-md"
+        style={{ background: 'linear-gradient(180deg, #EEF1FD 0%, #F6F8FE 55%, #FFFFFF 100%)' }}
+      >
+        {/* soft mesh */}
+        <div
+          className="pointer-events-none absolute inset-0 animate-mesh-float opacity-50"
+          style={{
+            backgroundImage:
+              'radial-gradient(closest-side at 78% 18%, rgba(76,87,212,.16), transparent 70%), radial-gradient(closest-side at 12% 88%, rgba(122,86,201,.13), transparent 70%), radial-gradient(closest-side at 50% 50%, rgba(31,156,139,.08), transparent 72%)',
+          }}
+        />
+        {/* course gradient hairline */}
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-[3px]" style={{ background: courseGradientBar }} />
 
-      <div className="relative mx-auto max-w-7xl px-5 py-9 md:px-8 md:py-12">
-        {/* brand + live status row */}
-        <div className="mb-9 flex items-center justify-between gap-4">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className={`relative flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-white/[0.06] ring-1 ${accent.markRing} backdrop-blur-sm`}>
-              <span className={`font-mono text-lg font-bold ${accent.mark}`}>{course.icon}</span>
-            </div>
-            <div className="min-w-0 leading-tight">
-              <p className="truncate text-sm font-semibold text-white">מרתון עם רן פקלר</p>
-              <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-slate-400">Exam Prep</p>
-            </div>
-          </div>
-
-          <div className="flex flex-shrink-0 items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 backdrop-blur-sm">
-            <span className="relative flex h-2 w-2">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
+        <div className="relative px-6 py-8 md:px-11 md:py-10">
+          <div className="mb-5 flex items-center gap-2.5">
+            <span className="inline-flex items-center gap-2 rounded-full border border-[#E1E4EE] bg-white/70 px-3 py-1.5 backdrop-blur-sm">
+              <span
+                className="h-[7px] w-[7px] animate-live-pulse rounded-full bg-success"
+                style={{ boxShadow: '0 0 0 3px rgba(30,158,106,.16)' }}
+              />
+              <span className="text-xs font-semibold text-[#3B7A5C]">משדר חי</span>
             </span>
-            <span className={`text-xs font-medium ${accent.chipText}`}>פעיל</span>
+            <span className="text-[13px] font-semibold tracking-wide text-text-2">מרתון עם רן פקלר</span>
           </div>
-        </div>
 
-        {/* course title */}
-        <h1 className="text-3xl font-bold tracking-tight text-white md:text-4xl lg:text-[2.75rem] lg:leading-[1.1]">
-          {course.name}
-        </h1>
-        <p className={`mt-3 max-w-xl text-[15px] leading-relaxed ${accent.subtitle}`}>
-          {course.subtitle}
-        </p>
+          <h1 className="max-w-[20ch] text-3xl font-bold leading-[1.12] tracking-tight text-[#15172A] md:text-[2.75rem]">
+            {course.name}
+          </h1>
+          <p className="mt-3.5 text-[15px] font-medium text-text-2 md:text-[17px]">
+            {course.subtitle}
+          </p>
 
-        {/* meta strip */}
-        <div className="mt-7 flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-slate-400">
-          <span className="flex items-center gap-1.5">
-            <StackGlyph />
-            <span className="font-mono tabular-nums text-slate-300">{course.meetings.length}</span>
-            מפגשים
-          </span>
-          {nextSession && (
-            <>
-              <span className="hidden h-3 w-px bg-white/10 sm:block" />
-              <span className="flex items-center gap-1.5">
-                <CalendarGlyph />
-                המפגש הבא
-                <span className="font-mono text-slate-300">{nextSession}</span>
+          <div className="mt-7 flex flex-wrap items-center gap-2.5">
+            {nextSession && (
+              <div className="inline-flex items-center gap-2.5 rounded-xl border border-border bg-surface px-3.5 py-2 shadow-sm">
+                <CalendarGlyph stroke={accent.accent} className="h-4 w-4" />
+                <span className="text-[13.5px] font-medium text-text-2">המפגש הבא</span>
+                <span className="font-mono text-[13.5px] font-semibold tracking-tight text-text">{nextSession}</span>
+              </div>
+            )}
+            <div className="inline-flex items-center gap-2 rounded-xl border border-border bg-surface px-3.5 py-2 shadow-sm">
+              <StackGlyph className="h-4 w-4" />
+              <span className="text-[13.5px] font-semibold text-text">
+                <span className="font-mono">{course.meetings.length}</span> מפגשים
               </span>
-            </>
-          )}
+            </div>
+          </div>
         </div>
       </div>
-
-      {/* accent baseline */}
-      <div className={`h-px w-full bg-gradient-to-l ${accent.line}`} />
     </header>
   )
 }

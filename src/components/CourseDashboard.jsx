@@ -4,6 +4,7 @@ import MeetingsSection from './MeetingsSection'
 import RecordingsSection from './RecordingsSection'
 import Sidebar from './Sidebar'
 import { courses } from '../data'
+import { getCourseTheme } from '../theme'
 import { duplicateCourseMaterials } from '../uploadedMaterials'
 import {
   addCustomCourseOverride,
@@ -28,16 +29,6 @@ import {
 
 const APP_ROLE = import.meta.env.VITE_APP_ROLE === 'admin' ? 'admin' : 'student'
 const IS_ADMIN_DEPLOYMENT = APP_ROLE === 'admin'
-
-// Active controls are near-monochrome (slate-900) for a refined, "tool" feel.
-// Per-course identity comes through as a subtle accent on the icon/dot.
-const ACTIVE_TAB = 'bg-slate-900 text-white shadow-sm'
-
-const courseAccents = {
-  sky: 'text-sky-500',
-  violet: 'text-violet-500',
-  emerald: 'text-emerald-500',
-}
 
 const contentTabs = [
   { key: 'meetings', label: 'מפגשים' },
@@ -143,32 +134,32 @@ function ModeToolbar({
   onStudentView,
 }) {
   return (
-    <div className="border-b border-slate-200 bg-white/85 backdrop-blur">
+    <div className="border-b border-border bg-white/85 backdrop-blur">
       <div className="mx-auto flex max-w-7xl flex-col gap-3 px-5 py-3 md:flex-row md:items-center md:justify-between md:px-8">
         <div className="flex items-center gap-2">
-          <span className={`inline-flex h-2.5 w-2.5 rounded-full ${isAdminMode ? 'bg-emerald-500' : 'bg-sky-500'}`} />
-          <span className="text-sm font-semibold text-slate-700">
+          <span className={`inline-flex h-2.5 w-2.5 rounded-full ${isAdminMode ? 'bg-success' : 'bg-primary'}`} />
+          <span className="text-sm font-semibold text-text">
             {isAdminMode ? 'מצב ניהול פעיל' : 'תצוגת סטודנט פעילה'}
           </span>
           {syncStatus && (
             <span className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${
               syncStatus.type === 'error'
-                ? 'bg-rose-50 text-rose-600 ring-1 ring-rose-100'
-                : 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100'
+                ? 'bg-danger/10 text-danger ring-1 ring-danger/20'
+                : 'bg-success/10 text-success ring-1 ring-success/20'
             }`}>
               {syncStatus.text}
             </span>
           )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1 shadow-sm">
+          <div className="flex items-center gap-1 rounded-lg border border-border bg-inset p-1 shadow-sm">
             <button
               type="button"
               onClick={onStudentView}
               className={`inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer ${
                 !isAdminMode
-                  ? 'bg-white text-sky-700 shadow-sm'
-                  : 'text-slate-500 hover:bg-white hover:text-slate-700'
+                  ? 'bg-white text-primary shadow-sm'
+                  : 'text-text-muted hover:bg-white hover:text-text'
               }`}
             >
               <EyeIcon />
@@ -179,8 +170,8 @@ function ModeToolbar({
               onClick={onAdminView}
               className={`inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer ${
                 isAdminMode
-                  ? 'bg-white text-emerald-700 shadow-sm'
-                  : 'text-slate-500 hover:bg-white hover:text-slate-700'
+                  ? 'bg-white text-success shadow-sm'
+                  : 'text-text-muted hover:bg-white hover:text-text'
               }`}
             >
               <UnlockIcon />
@@ -191,7 +182,7 @@ function ModeToolbar({
             <button
               type="button"
               onClick={onExport}
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600 shadow-sm transition-colors hover:border-sky-200 hover:text-sky-600 cursor-pointer"
+              className="inline-flex items-center gap-2 rounded-lg border border-border bg-white px-3 py-2 text-xs font-medium text-text-2 shadow-sm transition-colors hover:border-primary/40 hover:text-primary cursor-pointer"
             >
               <DownloadIcon />
               ייצוא עריכות
@@ -258,21 +249,21 @@ function CourseEditor({
   }
 
   return (
-    <form noValidate onSubmit={handleSubmit} className="mb-6 rounded-2xl bg-white p-5 border border-slate-100 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+    <form noValidate onSubmit={handleSubmit} className="mb-6 rounded-2xl bg-white p-5 border border-border-subtle shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-sm font-semibold text-slate-800">ניהול קבוצה</h2>
+          <h2 className="text-sm font-semibold text-text">ניהול קבוצה</h2>
           {isLocked && (
-            <p className="mt-1 text-xs text-amber-600">הקבוצה סגורה לעריכת פרטים וחומרים.</p>
+            <p className="mt-1 text-xs text-warning">הקבוצה סגורה לעריכת פרטים וחומרים.</p>
           )}
         </div>
         {isLocked ? (
-          <span className="inline-flex w-fit items-center gap-2 rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700 ring-1 ring-amber-100">
+          <span className="inline-flex w-fit items-center gap-2 rounded-full bg-warning/10 px-3 py-1 text-xs font-medium text-warning ring-1 ring-warning/20">
             <LockIcon />
             סגור לעריכה
           </span>
         ) : (
-          <span className="inline-flex w-fit items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 ring-1 ring-emerald-100">
+          <span className="inline-flex w-fit items-center gap-2 rounded-full bg-success/10 px-3 py-1 text-xs font-medium text-success ring-1 ring-success/20">
             <UnlockIcon />
             פתוח לעריכה
           </span>
@@ -281,65 +272,65 @@ function CourseEditor({
 
       <fieldset disabled={!canEditContent} className={!canEditContent ? 'opacity-60' : ''}>
         <div className="grid gap-3 md:grid-cols-3">
-          <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+          <label className="text-xs font-semibold text-text-muted uppercase tracking-wider">
             שם הקורס
             <input
               value={form.name}
               onChange={(event) => updateField('name', event.target.value)}
-              className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal text-slate-700 outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+              className="mt-1.5 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm font-normal text-text outline-none focus:border-primary focus:ring-2 focus:ring-primary-soft"
             />
           </label>
-          <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+          <label className="text-xs font-semibold text-text-muted uppercase tracking-wider">
             כותרת משנה
             <input
               value={form.subtitle}
               onChange={(event) => updateField('subtitle', event.target.value)}
-              className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal text-slate-700 outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+              className="mt-1.5 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm font-normal text-text outline-none focus:border-primary focus:ring-2 focus:ring-primary-soft"
             />
           </label>
-          <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+          <label className="text-xs font-semibold text-text-muted uppercase tracking-wider">
             המפגש הבא
             <input
               type="datetime-local"
               value={form.nextSession}
               onChange={(event) => updateField('nextSession', event.target.value)}
-              className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal text-slate-700 outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+              className="mt-1.5 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm font-normal text-text outline-none focus:border-primary focus:ring-2 focus:ring-primary-soft"
             />
           </label>
         </div>
-        <details className="mt-4 rounded-xl border border-slate-100 bg-white p-4">
-          <summary className="cursor-pointer text-xs font-semibold text-slate-500">
+        <details className="mt-4 rounded-xl border border-border-subtle bg-white p-4">
+          <summary className="cursor-pointer text-xs font-semibold text-text-muted">
             עריכה מתקדמת: הקלטות, תאריכים וקישורים
           </summary>
           <div className="mt-4 grid gap-3 lg:grid-cols-3">
-            <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+            <label className="text-xs font-semibold text-text-muted uppercase tracking-wider">
               הקלטות
               <textarea
                 dir="ltr"
                 value={form.recordings}
                 onChange={(event) => updateField('recordings', event.target.value)}
                 rows={10}
-                className="mt-1.5 w-full resize-y rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-mono font-normal leading-relaxed text-slate-700 outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+                className="mt-1.5 w-full resize-y rounded-xl border border-border bg-white px-3 py-2 text-xs font-mono font-normal leading-relaxed text-text outline-none focus:border-primary focus:ring-2 focus:ring-primary-soft"
               />
             </label>
-            <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+            <label className="text-xs font-semibold text-text-muted uppercase tracking-wider">
               תאריכים חשובים
               <textarea
                 dir="ltr"
                 value={form.deadlines}
                 onChange={(event) => updateField('deadlines', event.target.value)}
                 rows={10}
-                className="mt-1.5 w-full resize-y rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-mono font-normal leading-relaxed text-slate-700 outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+                className="mt-1.5 w-full resize-y rounded-xl border border-border bg-white px-3 py-2 text-xs font-mono font-normal leading-relaxed text-text outline-none focus:border-primary focus:ring-2 focus:ring-primary-soft"
               />
             </label>
-            <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+            <label className="text-xs font-semibold text-text-muted uppercase tracking-wider">
               קישורים מהירים
               <textarea
                 dir="ltr"
                 value={form.resources}
                 onChange={(event) => updateField('resources', event.target.value)}
                 rows={10}
-                className="mt-1.5 w-full resize-y rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-mono font-normal leading-relaxed text-slate-700 outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+                className="mt-1.5 w-full resize-y rounded-xl border border-border bg-white px-3 py-2 text-xs font-mono font-normal leading-relaxed text-text outline-none focus:border-primary focus:ring-2 focus:ring-primary-soft"
               />
             </label>
           </div>
@@ -350,7 +341,7 @@ function CourseEditor({
         <button
           type="submit"
           disabled={!canEditContent}
-          className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+          className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
         >
           שמור פרטי קבוצה
         </button>
@@ -358,7 +349,7 @@ function CourseEditor({
           type="button"
           onClick={onAddMeeting}
           disabled={!canEditContent}
-          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 shadow-sm transition-colors hover:border-sky-200 hover:text-sky-600 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+          className="inline-flex items-center gap-2 rounded-lg border border-border bg-white px-4 py-2 text-sm font-medium text-text-2 shadow-sm transition-colors hover:border-primary/40 hover:text-primary disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
         >
           <PlusIcon />
           הוסף מפגש
@@ -366,7 +357,7 @@ function CourseEditor({
         <button
           type="button"
           onClick={onDuplicate}
-          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 shadow-sm transition-colors hover:border-sky-200 hover:text-sky-600 cursor-pointer"
+          className="inline-flex items-center gap-2 rounded-lg border border-border bg-white px-4 py-2 text-sm font-medium text-text-2 shadow-sm transition-colors hover:border-primary/40 hover:text-primary cursor-pointer"
         >
           <DuplicateIcon />
           שכפל לקבוצה נוספת
@@ -375,7 +366,7 @@ function CourseEditor({
           <button
             type="button"
             onClick={onUnlock}
-            className="inline-flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-700 shadow-sm transition-colors hover:bg-amber-100 cursor-pointer"
+            className="inline-flex items-center gap-2 rounded-lg border border-warning/30 bg-warning/10 px-4 py-2 text-sm font-medium text-warning shadow-sm transition-colors hover:bg-warning/15 cursor-pointer"
           >
             <UnlockIcon />
             פתח לעריכה
@@ -384,7 +375,7 @@ function CourseEditor({
           <button
             type="button"
             onClick={onLock}
-            className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-700 shadow-sm transition-colors hover:bg-emerald-100 cursor-pointer"
+            className="inline-flex items-center gap-2 rounded-lg border border-success/30 bg-success/10 px-4 py-2 text-sm font-medium text-success shadow-sm transition-colors hover:bg-success/10 cursor-pointer"
           >
             <LockIcon />
             סמן כסופי
@@ -394,13 +385,13 @@ function CourseEditor({
           type="button"
           onClick={onDelete}
           disabled={!canDelete}
-          className="inline-flex items-center gap-2 rounded-lg border border-rose-100 bg-white px-4 py-2 text-sm font-medium text-rose-500 shadow-sm transition-colors hover:border-rose-200 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40 cursor-pointer"
+          className="inline-flex items-center gap-2 rounded-lg border border-danger/20 bg-white px-4 py-2 text-sm font-medium text-danger shadow-sm transition-colors hover:border-danger/30 hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-40 cursor-pointer"
         >
           <TrashIcon />
           מחק קבוצה
         </button>
         {status && (
-          <span className={`text-xs ${status.type === 'error' ? 'text-rose-600' : 'text-emerald-600'}`}>
+          <span className={`text-xs ${status.type === 'error' ? 'text-danger' : 'text-success'}`}>
             {status.text}
           </span>
         )}
@@ -640,27 +631,30 @@ export default function CourseDashboard() {
         />
       )}
 
-      <main className="mx-auto max-w-7xl px-5 py-8 md:px-8">
-        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-1 rounded-xl bg-white p-1 shadow-card border border-slate-200/70 overflow-x-auto">
+      <main className="mx-auto max-w-7xl px-5 py-7 md:px-8">
+        <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-1 overflow-x-auto rounded-[14px] border border-border bg-surface p-1 shadow-sm">
             {visibleCourses.map((c) => {
               const isActive = activeCourseId === c.id
+              const accent = getCourseTheme(c.color)
               return (
                 <button
                   key={c.id}
                   onClick={() => handleSelectCourse(c.id)}
-                  className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium transition-all cursor-pointer whitespace-nowrap ${
-                    isActive
-                      ? ACTIVE_TAB
-                      : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
+                  className={`flex items-center gap-2 whitespace-nowrap rounded-[10px] px-3.5 py-2 text-sm font-semibold transition-all cursor-pointer ${
+                    isActive ? 'bg-inset text-text' : 'text-text-muted hover:text-text'
                   }`}
                 >
-                  <span className={`font-mono text-xs ${isActive ? 'text-white/60' : courseAccents[c.color] ?? 'text-slate-400'}`}>
-                    {c.icon}
-                  </span>
+                  <span
+                    className="h-[9px] w-[9px] rounded-[3px]"
+                    style={{
+                      background: accent.accent,
+                      boxShadow: isActive ? `0 0 0 3px ${accent.tint}` : 'none',
+                    }}
+                  />
                   {c.name}
                   {c.locked && (
-                    <span className="opacity-70">
+                    <span className="text-text-faint">
                       <LockIcon />
                     </span>
                   )}
@@ -669,15 +663,15 @@ export default function CourseDashboard() {
             })}
           </div>
 
-          <div className="flex items-center gap-1 rounded-xl bg-white p-1 shadow-card border border-slate-200/70 w-fit">
+          <div className="flex w-fit items-center gap-0.5 rounded-xl bg-inset p-1">
             {contentTabs.map((tab) => (
               <button
                 key={tab.key}
                 onClick={() => setActiveContent(tab.key)}
-                className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all cursor-pointer ${
+                className={`rounded-[9px] px-4 py-1.5 text-sm font-semibold transition-all cursor-pointer ${
                   activeContent === tab.key
-                    ? ACTIVE_TAB
-                    : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
+                    ? 'bg-surface text-text shadow-sm'
+                    : 'text-text-muted hover:text-text'
                 }`}
               >
                 {tab.label}

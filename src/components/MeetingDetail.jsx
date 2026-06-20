@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { getCourseTheme } from '../theme'
 import {
   deleteMeetingRequest,
   deleteUploadedMaterial,
@@ -51,7 +52,7 @@ const materialSections = {
     title: 'תרגילים ודפי עבודה',
     uploadLabel: 'חומר',
     emptyText: 'אין עדיין תרגילים או דפי עבודה במפגש הזה',
-    iconClassName: 'bg-rose-100 text-rose-500',
+    iconClassName: 'bg-danger/10 text-danger',
   },
 }
 
@@ -164,54 +165,54 @@ function MeetingEditor({ meeting, onSave }) {
   }
 
   return (
-    <form noValidate onSubmit={handleSubmit} className="rounded-xl border border-slate-100 bg-slate-50 p-4">
-      <h4 className="mb-3 text-xs font-semibold text-slate-400 uppercase tracking-wider">עריכת פרטי מפגש</h4>
+    <form noValidate onSubmit={handleSubmit} className="rounded-xl border border-border-subtle bg-inset p-4">
+      <h4 className="mb-3 text-xs font-semibold text-text-muted uppercase tracking-wider">עריכת פרטי מפגש</h4>
       <div className="grid gap-3 md:grid-cols-2">
-        <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+        <label className="text-xs font-semibold text-text-muted uppercase tracking-wider">
           כותרת
           <input
             value={form.title}
             onChange={(event) => updateField('title', event.target.value)}
-            className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal text-slate-700 outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+            className="mt-1.5 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm font-normal text-text outline-none focus:border-primary focus:ring-2 focus:ring-primary-soft"
           />
         </label>
-        <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+        <label className="text-xs font-semibold text-text-muted uppercase tracking-wider">
           סוג מפגש
           <select
             value={form.type}
             onChange={(event) => updateField('type', event.target.value)}
-            className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal text-slate-700 outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+            className="mt-1.5 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm font-normal text-text outline-none focus:border-primary focus:ring-2 focus:ring-primary-soft"
           >
             <option value="in-person">פרונטלי</option>
             <option value="zoom">זום</option>
           </select>
         </label>
-        <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+        <label className="text-xs font-semibold text-text-muted uppercase tracking-wider">
           תאריך מערכת
           <input
             type="date"
             value={form.date}
             onChange={(event) => updateField('date', event.target.value)}
-            className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal text-slate-700 outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+            className="mt-1.5 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm font-normal text-text outline-none focus:border-primary focus:ring-2 focus:ring-primary-soft"
           />
         </label>
-        <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+        <label className="text-xs font-semibold text-text-muted uppercase tracking-wider">
           תאריך לתצוגה
           <input
             value={form.dateDisplay}
             onChange={(event) => updateField('dateDisplay', event.target.value)}
-            className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal text-slate-700 outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+            className="mt-1.5 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm font-normal text-text outline-none focus:border-primary focus:ring-2 focus:ring-primary-soft"
           />
         </label>
-        <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+        <label className="text-xs font-semibold text-text-muted uppercase tracking-wider">
           יום
           <input
             value={form.day}
             onChange={(event) => updateField('day', event.target.value)}
-            className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal text-slate-700 outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+            className="mt-1.5 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm font-normal text-text outline-none focus:border-primary focus:ring-2 focus:ring-primary-soft"
           />
         </label>
-        <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+        <label className="text-xs font-semibold text-text-muted uppercase tracking-wider">
           שעת התחלה
           <input
             value={form.startTime}
@@ -219,10 +220,10 @@ function MeetingEditor({ meeting, onSave }) {
             inputMode="numeric"
             dir="ltr"
             placeholder="18:00"
-            className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-mono font-normal text-slate-700 outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+            className="mt-1.5 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm font-mono font-normal text-text outline-none focus:border-primary focus:ring-2 focus:ring-primary-soft"
           />
         </label>
-        <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+        <label className="text-xs font-semibold text-text-muted uppercase tracking-wider">
           שעת סיום
           <input
             value={form.endTime}
@@ -230,89 +231,90 @@ function MeetingEditor({ meeting, onSave }) {
             inputMode="numeric"
             dir="ltr"
             placeholder="21:00"
-            className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-mono font-normal text-slate-700 outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+            className="mt-1.5 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm font-mono font-normal text-text outline-none focus:border-primary focus:ring-2 focus:ring-primary-soft"
           />
         </label>
-        <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider md:col-span-2">
+        <label className="text-xs font-semibold text-text-muted uppercase tracking-wider md:col-span-2">
           מיקום / קישור
           <input
             value={form.location}
             onChange={(event) => updateField('location', event.target.value)}
-            className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal text-slate-700 outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+            className="mt-1.5 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm font-normal text-text outline-none focus:border-primary focus:ring-2 focus:ring-primary-soft"
           />
         </label>
-        <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider md:col-span-2">
+        <label className="text-xs font-semibold text-text-muted uppercase tracking-wider md:col-span-2">
           תיאור
           <textarea
             value={form.description}
             onChange={(event) => updateField('description', event.target.value)}
             rows={3}
-            className="mt-1.5 w-full resize-y rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal leading-relaxed text-slate-700 outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+            className="mt-1.5 w-full resize-y rounded-xl border border-border bg-white px-3 py-2 text-sm font-normal leading-relaxed text-text outline-none focus:border-primary focus:ring-2 focus:ring-primary-soft"
           />
         </label>
-        <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider md:col-span-2">
+        <label className="text-xs font-semibold text-text-muted uppercase tracking-wider md:col-span-2">
           נושאים
           <textarea
             value={form.topics}
             onChange={(event) => updateField('topics', event.target.value)}
             rows={3}
-            className="mt-1.5 w-full resize-y rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-normal leading-relaxed text-slate-700 outline-none focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+            className="mt-1.5 w-full resize-y rounded-xl border border-border bg-white px-3 py-2 text-sm font-normal leading-relaxed text-text outline-none focus:border-primary focus:ring-2 focus:ring-primary-soft"
           />
         </label>
       </div>
       <div className="mt-4 flex items-center gap-3">
-        <button type="submit" className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-slate-800 cursor-pointer">
+        <button type="submit" className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-primary-hover cursor-pointer">
           שמור פרטי מפגש
         </button>
-        {status && <span className="text-xs text-emerald-600">{status}</span>}
+        {status && <span className="text-xs text-success">{status}</span>}
       </div>
     </form>
   )
 }
 
-function OverviewTab({ canEditContent, meeting, onUpdateMeeting }) {
+function OverviewTab({ canEditContent, courseColor, meeting, onUpdateMeeting }) {
+  const accent = getCourseTheme(courseColor)
   return (
     <div className="space-y-4">
-      <p className="text-sm text-slate-600 leading-relaxed">{meeting.description}</p>
+      <p className="text-[14.5px] leading-relaxed text-text-2">{meeting.description}</p>
       <div>
-        <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2.5">נושאים</h4>
+        <h4 className="mb-2.5 text-xs font-semibold uppercase tracking-wider text-text-muted">נושאים</h4>
         <div className="flex flex-wrap gap-2">
           {meeting.topics.map((topic) => (
             <span
               key={topic}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 ring-1 ring-slate-200/70"
+              className="inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-medium"
+              style={{ color: accent.accent, background: accent.tint, borderColor: accent.tintBorder }}
             >
-              <span className="font-mono text-slate-400">#</span>
               {topic}
             </span>
           ))}
         </div>
       </div>
-      <div className="rounded-xl bg-slate-50 p-4 border border-slate-100">
+      <div className="rounded-xl bg-inset p-4 border border-border-subtle">
         <div className="flex items-center gap-3 text-sm">
           {meeting.type === 'zoom' ? (
             <>
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-100 text-blue-600">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-soft text-primary">
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
                   <path strokeLinecap="round" strokeLinejoin="round" d="m15.75 10.5 4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25h-9A2.25 2.25 0 0 0 2.25 7.5v9a2.25 2.25 0 0 0 2.25 2.25Z" />
                 </svg>
               </div>
               <div>
-                <p className="font-medium text-slate-700">מפגש בזום</p>
-                <p className="text-xs text-slate-400">קישור יפורסם בקבוצה לפני המפגש</p>
+                <p className="font-medium text-text">מפגש בזום</p>
+                <p className="text-xs text-text-muted">קישור יפורסם בקבוצה לפני המפגש</p>
               </div>
             </>
           ) : (
             <>
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-success/10 text-success">
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
                   <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
                 </svg>
               </div>
               <div>
-                <p className="font-medium text-slate-700">מפגש פרונטלי</p>
-                <p className="text-xs text-slate-400">{meeting.location}</p>
+                <p className="font-medium text-text">מפגש פרונטלי</p>
+                <p className="text-xs text-text-muted">{meeting.location}</p>
               </div>
             </>
           )}
@@ -353,7 +355,7 @@ function TrashIcon() {
 
 function MaterialItem({ canEditContent, item, iconClassName, onDelete }) {
   return (
-    <div className="group flex items-center gap-3 rounded-xl bg-slate-50 p-3.5 border border-slate-100 hover:border-sky-200 hover:bg-sky-50/50 transition-all">
+    <div className="group flex items-center gap-3 rounded-xl bg-inset p-3.5 border border-border-subtle hover:border-primary/40 hover:bg-primary-soft/50 transition-all">
       <FileIcon className={iconClassName} />
       <a
         href={item.url}
@@ -361,11 +363,11 @@ function MaterialItem({ canEditContent, item, iconClassName, onDelete }) {
         rel="noreferrer"
         className="min-w-0 flex-1"
       >
-        <span className="block truncate text-sm font-medium text-slate-700 group-hover:text-sky-700 transition-colors">
+        <span className="block truncate text-sm font-medium text-text group-hover:text-primary transition-colors">
           {item.title}
         </span>
         {item.uploaded && (
-          <span className="mt-1 block text-xs text-slate-400">
+          <span className="mt-1 block text-xs text-text-muted">
             {formatBytes(item.size)}
           </span>
         )}
@@ -375,7 +377,7 @@ function MaterialItem({ canEditContent, item, iconClassName, onDelete }) {
           type="button"
           onClick={() => onDelete(item)}
           aria-label={`מחק ${item.title}`}
-          className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-slate-300 transition-colors hover:bg-rose-50 hover:text-rose-500 cursor-pointer"
+          className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-text-faint transition-colors hover:bg-danger/10 hover:text-danger cursor-pointer"
         >
           <TrashIcon />
         </button>
@@ -397,9 +399,9 @@ function MaterialSection({
   return (
     <div>
       <div className="mb-2.5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">{meta.title}</h4>
+        <h4 className="text-xs font-semibold text-text-muted uppercase tracking-wider">{meta.title}</h4>
         {canEditContent && (
-          <label className={`inline-flex w-fit items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition-colors hover:border-sky-200 hover:text-sky-600 cursor-pointer ${
+          <label className={`inline-flex w-fit items-center gap-2 rounded-lg border border-border bg-white px-3 py-1.5 text-xs font-medium text-text-2 shadow-sm transition-colors hover:border-primary/40 hover:text-primary cursor-pointer ${
             savingCategory === category ? 'pointer-events-none opacity-60' : ''
           }`}>
             <input
@@ -427,7 +429,7 @@ function MaterialSection({
           ))}
         </div>
       ) : (
-        <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/70 px-4 py-5 text-center text-sm text-slate-400">
+        <div className="rounded-xl border border-dashed border-border bg-inset/70 px-4 py-5 text-center text-sm text-text-muted">
           {meta.emptyText}
         </div>
       )}
@@ -594,13 +596,13 @@ function MaterialsTab({ canEditContent, courseId, meeting, refreshToken }) {
         savingCategory={savingCategory}
       />
       {loadingUploads && (
-        <p className="text-xs text-slate-400">טוען חומרים שמורים...</p>
+        <p className="text-xs text-text-muted">טוען חומרים שמורים...</p>
       )}
       {status && (
         <p className={`rounded-lg px-3 py-2 text-xs ${
           status.type === 'error'
-            ? 'bg-rose-50 text-rose-600 ring-1 ring-rose-100'
-            : 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100'
+            ? 'bg-danger/10 text-danger ring-1 ring-danger/20'
+            : 'bg-success/10 text-success ring-1 ring-success/20'
         }`}>
           {status.text}
         </p>
@@ -724,8 +726,8 @@ function RequestsTab({ courseId, isAdminMode, meeting, refreshToken }) {
 
   return (
     <div className="space-y-5">
-      <form onSubmit={handleSubmit} className="rounded-xl border border-slate-100 bg-slate-50 p-4">
-        <label htmlFor={`request-${meeting.id}`} className="mb-2 block text-xs font-semibold text-slate-400 uppercase tracking-wider">
+      <form onSubmit={handleSubmit} className="rounded-xl border border-border-subtle bg-inset p-4">
+        <label htmlFor={`request-${meeting.id}`} className="mb-2 block text-xs font-semibold text-text-muted uppercase tracking-wider">
           שאלה למפגש
         </label>
         <textarea
@@ -733,20 +735,20 @@ function RequestsTab({ courseId, isAdminMode, meeting, refreshToken }) {
           value={requestText}
           onChange={(event) => setRequestText(event.target.value)}
           rows={4}
-          className="min-h-28 w-full resize-y rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm leading-relaxed text-slate-700 outline-none transition-colors placeholder:text-slate-300 focus:border-sky-300 focus:ring-2 focus:ring-sky-100"
+          className="min-h-28 w-full resize-y rounded-xl border border-border bg-white px-3 py-2.5 text-sm leading-relaxed text-text outline-none transition-colors placeholder:text-text-faint focus:border-primary focus:ring-2 focus:ring-primary-soft"
           placeholder="כתבו כאן את השאלה"
         />
-        <div className="mt-3 rounded-xl border border-dashed border-slate-200 bg-white p-4">
+        <div className="mt-3 rounded-xl border border-dashed border-border bg-white p-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">קובץ שאלה ממבחן</p>
+              <p className="text-xs font-semibold text-text-muted uppercase tracking-wider">קובץ שאלה ממבחן</p>
               {requestFile && (
-                <p className="mt-1 text-sm text-slate-600">
+                <p className="mt-1 text-sm text-text-2">
                   {requestFile.name} · {formatBytes(requestFile.size)}
                 </p>
               )}
             </div>
-            <label className="inline-flex w-fit items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition-colors hover:border-sky-200 hover:text-sky-600 cursor-pointer">
+            <label className="inline-flex w-fit items-center gap-2 rounded-lg border border-border bg-white px-3 py-1.5 text-xs font-medium text-text-2 shadow-sm transition-colors hover:border-primary/40 hover:text-primary cursor-pointer">
               <input
                 ref={fileInputRef}
                 type="file"
@@ -767,26 +769,26 @@ function RequestsTab({ courseId, isAdminMode, meeting, refreshToken }) {
                   fileInputRef.current.value = ''
                 }
               }}
-              className="mt-3 text-xs font-medium text-rose-500 hover:text-rose-600 cursor-pointer"
+              className="mt-3 text-xs font-medium text-danger hover:text-danger cursor-pointer"
             >
               הסר קובץ
             </button>
           )}
         </div>
         <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <label className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 cursor-pointer">
+          <label className="inline-flex items-center gap-2 text-sm font-medium text-text-2 cursor-pointer">
             <input
               type="checkbox"
               checked={reviewInClass}
               onChange={(event) => setReviewInClass(event.target.checked)}
-              className="h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-200"
+              className="h-4 w-4 rounded border-border-strong text-primary focus:ring-primary-soft"
             />
             לעבור עליה בכיתה
           </label>
           <button
             type="submit"
             disabled={savingRequest}
-            className="inline-flex w-fit items-center justify-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
+            className="inline-flex w-fit items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-60 cursor-pointer"
           >
             {savingRequest ? 'שומר...' : 'שלח בקשה'}
           </button>
@@ -794,39 +796,39 @@ function RequestsTab({ courseId, isAdminMode, meeting, refreshToken }) {
       </form>
 
       <div>
-        <h4 className="mb-2.5 text-xs font-semibold text-slate-400 uppercase tracking-wider">בקשות שנשלחו</h4>
+        <h4 className="mb-2.5 text-xs font-semibold text-text-muted uppercase tracking-wider">בקשות שנשלחו</h4>
         {loadingRequests ? (
-          <p className="text-xs text-slate-400">טוען בקשות שמורות...</p>
+          <p className="text-xs text-text-muted">טוען בקשות שמורות...</p>
         ) : requests.length > 0 ? (
           <div className="space-y-2.5">
             {requests.map((request) => (
-              <div key={request.id} className="rounded-xl border border-slate-100 bg-slate-50 p-4">
+              <div key={request.id} className="rounded-xl border border-border-subtle bg-inset p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     {request.text && (
-                      <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-700">{request.text}</p>
+                      <p className="whitespace-pre-wrap text-sm leading-relaxed text-text">{request.text}</p>
                     )}
                     {request.fileUrl && (
                       <a
                         href={request.fileUrl}
                         target="_blank"
                         rel="noreferrer"
-                        className="mt-3 flex items-center gap-3 rounded-xl border border-slate-100 bg-white p-3 transition-colors hover:border-sky-200 hover:bg-sky-50/50"
+                        className="mt-3 flex items-center gap-3 rounded-xl border border-border-subtle bg-white p-3 transition-colors hover:border-primary/40 hover:bg-primary-soft/50"
                       >
-                        <FileIcon className="bg-sky-100 text-sky-600" />
+                        <FileIcon className="bg-primary-soft text-primary" />
                         <span className="min-w-0">
-                          <span className="block truncate text-sm font-medium text-slate-700">{request.fileName}</span>
-                          <span className="mt-1 block text-xs text-slate-400">{formatBytes(request.fileSize)}</span>
+                          <span className="block truncate text-sm font-medium text-text">{request.fileName}</span>
+                          <span className="mt-1 block text-xs text-text-muted">{formatBytes(request.fileSize)}</span>
                         </span>
                       </a>
                     )}
                     <div className="mt-3 flex flex-wrap items-center gap-2">
                       {request.reviewInClass && (
-                        <span className="rounded-full bg-sky-50 px-2.5 py-1 text-[11px] font-medium text-sky-700 ring-1 ring-sky-100">
+                        <span className="rounded-full bg-primary-soft px-2.5 py-1 text-[11px] font-medium text-primary ring-1 ring-primary-soft">
                           לעבור בכיתה
                         </span>
                       )}
-                      <span className="text-[11px] text-slate-400">{formatRequestDate(request.createdAt)}</span>
+                      <span className="text-[11px] text-text-muted">{formatRequestDate(request.createdAt)}</span>
                     </div>
                   </div>
                   {isAdminMode && (
@@ -834,7 +836,7 @@ function RequestsTab({ courseId, isAdminMode, meeting, refreshToken }) {
                       type="button"
                       onClick={() => handleDeleteRequest(request)}
                       aria-label="מחק בקשה"
-                      className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-slate-300 transition-colors hover:bg-rose-50 hover:text-rose-500 cursor-pointer"
+                      className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-text-faint transition-colors hover:bg-danger/10 hover:text-danger cursor-pointer"
                     >
                       <TrashIcon />
                     </button>
@@ -844,7 +846,7 @@ function RequestsTab({ courseId, isAdminMode, meeting, refreshToken }) {
             ))}
           </div>
         ) : (
-          <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/70 px-4 py-5 text-center text-sm text-slate-400">
+          <div className="rounded-xl border border-dashed border-border bg-inset/70 px-4 py-5 text-center text-sm text-text-muted">
             עוד אין בקשות למפגש הזה
           </div>
         )}
@@ -853,8 +855,8 @@ function RequestsTab({ courseId, isAdminMode, meeting, refreshToken }) {
       {status && (
         <p className={`rounded-lg px-3 py-2 text-xs ${
           status.type === 'error'
-            ? 'bg-rose-50 text-rose-600 ring-1 ring-rose-100'
-            : 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100'
+            ? 'bg-danger/10 text-danger ring-1 ring-danger/20'
+            : 'bg-success/10 text-success ring-1 ring-success/20'
         }`}>
           {status.text}
         </p>
@@ -865,6 +867,7 @@ function RequestsTab({ courseId, isAdminMode, meeting, refreshToken }) {
 
 export default function MeetingDetail({
   canEditContent = false,
+  courseColor,
   courseId,
   isAdminMode = false,
   meeting,
@@ -874,20 +877,20 @@ export default function MeetingDetail({
   const [activeTab, setActiveTab] = useState('overview')
 
   return (
-    <div className="animate-expand border-t border-slate-100">
-      <div className="p-5 md:p-6 pt-0 md:pt-0">
-        <div className="flex gap-1 border-b border-slate-100 mb-5 -mx-1">
+    <div className="animate-expand border-t border-border-subtle bg-[#FBFCFE]">
+      <div className="p-5 pt-5 md:p-[22px] md:pt-[22px]">
+        <div className="mb-5 inline-flex gap-0.5 rounded-[10px] bg-inset p-1">
           {detailTabs.map((tab) => (
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
-              className={`flex items-center gap-1.5 px-4 py-3 text-sm font-medium border-b-2 transition-all -mb-px cursor-pointer ${
+              className={`flex items-center gap-1.5 rounded-[7px] px-3.5 py-1.5 text-[13px] font-semibold transition-all cursor-pointer ${
                 activeTab === tab.key
-                  ? 'border-slate-900 text-slate-900'
-                  : 'border-transparent text-slate-400 hover:text-slate-600'
+                  ? 'bg-surface text-text shadow-sm'
+                  : 'text-text-muted hover:text-text'
               }`}
             >
-              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.6">
                 <path strokeLinecap="round" strokeLinejoin="round" d={tab.icon} />
               </svg>
               {tab.label}
@@ -898,6 +901,7 @@ export default function MeetingDetail({
         {activeTab === 'overview' && (
           <OverviewTab
             canEditContent={canEditContent}
+            courseColor={courseColor}
             meeting={meeting}
             onUpdateMeeting={onUpdateMeeting}
           />
