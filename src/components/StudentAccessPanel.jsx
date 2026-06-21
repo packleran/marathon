@@ -24,6 +24,10 @@ function CopyIcon() {
   return <IconButtonSvg path="M8.25 8.25h10.5v10.5H8.25z M5.25 15.75V5.25h10.5" />
 }
 
+function WhatsAppIcon() {
+  return <IconButtonSvg path="M20.25 11.94a8.25 8.25 0 01-12.1 7.3L3.75 20.25l1.05-4.28A8.25 8.25 0 1120.25 11.94z M9.4 8.66c-.18-.4-.37-.41-.54-.42h-.46c-.16 0-.42.06-.64.3-.22.24-.84.82-.84 2s.86 2.32.98 2.48c.12.16 1.66 2.66 4.1 3.62 2.02.8 2.44.64 2.88.6.44-.04 1.42-.58 1.62-1.14.2-.56.2-1.04.14-1.14-.06-.1-.22-.16-.46-.28l-1.36-.67c-.24-.12-.42-.18-.6.18-.18.36-.7 1.14-.86 1.34-.16.2-.32.22-.58.08-.26-.14-1.08-.4-2.05-1.27-.76-.68-1.27-1.52-1.42-1.78-.15-.26-.02-.4.11-.53.12-.12.26-.32.4-.48.13-.16.18-.28.26-.46.08-.18.04-.34-.02-.48l-.66-1.95z" />
+}
+
 function RefreshIcon() {
   return <IconButtonSvg path="M16.02 9.35h4.07V5.28 M20.09 9.35A8.25 8.25 0 105.3 16.52" />
 }
@@ -63,12 +67,12 @@ function upsertStudent(students, nextStudent) {
 }
 
 function whatsAppStatusType(whatsApp) {
-  if (!whatsApp) return 'success'
-  return whatsApp?.status === 'sent' ? 'success' : 'error'
+  if (!whatsApp || whatsApp?.status === 'sent' || whatsApp?.status === 'skipped') return 'success'
+  return 'error'
 }
 
 function appendWhatsAppStatus(text, whatsApp) {
-  if (!whatsApp) return text
+  if (!whatsApp || whatsApp.status === 'skipped') return text
   return `${text}. ${whatsApp.text}`
 }
 
@@ -79,6 +83,31 @@ function firstCourseId(student) {
 function courseName(courses, courseId, publicCourseIdSet = new Set()) {
   const label = courses.find((course) => String(course.id) === String(courseId))?.name ?? courseId
   return publicCourseIdSet.has(String(courseId)) ? `${label} (פתוח)` : label
+}
+
+function toWhatsAppPhoneNumber(value) {
+  const digits = String(value ?? '').replace(/\D/g, '')
+  if (digits.startsWith('972')) return digits
+  if (digits.startsWith('0')) return `972${digits.slice(1)}`
+
+  return digits
+}
+
+function createCredentialsMessage(credentials) {
+  return [
+    `שלום${credentials.name ? ` ${credentials.name}` : ''},`,
+    'פרטי הכניסה שלך לאתר המרתון:',
+    `שם משתמש: ${credentials.phone}`,
+    `סיסמה: ${credentials.password}`,
+    credentials.courseName ? `קורס: ${credentials.courseName}` : null,
+  ].filter(Boolean).join('\n')
+}
+
+function createWhatsAppWebUrl(credentials) {
+  const phone = toWhatsAppPhoneNumber(credentials?.phone)
+  if (!phone) return ''
+
+  return `https://web.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(createCredentialsMessage(credentials))}`
 }
 
 export default function StudentAccessPanel({ courses = [], publicCourseIds = [] }) {
@@ -131,6 +160,18 @@ export default function StudentAccessPanel({ courses = [], publicCourseIds = [] 
     setForm((current) => ({ ...current, [field]: value }))
   }
 
+  function createCredentialsPayload(student, password, whatsApp) {
+    const courseId = firstCourseId(student)
+
+    return {
+      phone: student.phone,
+      name: student.name,
+      password,
+      courseName: courseId ? courseName(courses, courseId, publicCourseIdSet) : '',
+      whatsApp,
+    }
+  }
+
   async function handleCreateStudent(event) {
     event.preventDefault()
     setIsSaving(true)
@@ -145,12 +186,7 @@ export default function StudentAccessPanel({ courses = [], publicCourseIds = [] 
         password: passwordMode === 'manual' ? form.password : '',
       })
       setStudents((current) => upsertStudent(current, data.student))
-      setCredentials({
-        phone: data.student.phone,
-        name: data.student.name,
-        password: data.password,
-        whatsApp: data.whatsApp,
-      })
+      setCredentials(createCredentialsPayload(data.student, data.password, data.whatsApp))
       setForm({ phone: '', name: '', courseId: '', password: '' })
       setPasswordMode('auto')
       setStatus({
@@ -173,12 +209,7 @@ export default function StudentAccessPanel({ courses = [], publicCourseIds = [] 
     try {
       const data = await resetStudentPassword(student.id)
       setStudents((current) => upsertStudent(current, data.student))
-      setCredentials({
-        phone: data.student.phone,
-        name: data.student.name,
-        password: data.password,
-        whatsApp: data.whatsApp,
-      })
+      setCredentials(createCredentialsPayload(data.student, data.password, data.whatsApp))
       setStatus({
         type: whatsAppStatusType(data.whatsApp),
         text: appendWhatsAppStatus('הסיסמה אופסה', data.whatsApp),
@@ -259,12 +290,19 @@ export default function StudentAccessPanel({ courses = [], publicCourseIds = [] 
   async function handleCopyCredentials() {
     if (!credentials) return
 
-    await navigator.clipboard.writeText([
-      credentials.name ? `שם: ${credentials.name}` : null,
-      `שם משתמש: ${credentials.phone}`,
-      `סיסמה: ${credentials.password}`,
-    ].filter(Boolean).join('\n'))
+    await navigator.clipboard.writeText(createCredentialsMessage(credentials))
     setStatus({ type: 'success', text: 'פרטי הכניסה הועתקו' })
+  }
+
+  function handleOpenWhatsAppWeb() {
+    const url = createWhatsAppWebUrl(credentials)
+    if (!url) {
+      setStatus({ type: 'error', text: 'אין מספר טלפון תקין לפתיחה ב-WhatsApp' })
+      return
+    }
+
+    window.open(url, '_blank', 'noopener,noreferrer')
+    setStatus({ type: 'success', text: 'נפתח WhatsApp Web עם הודעה מוכנה לשליחה' })
   }
 
   return (
@@ -376,7 +414,7 @@ export default function StudentAccessPanel({ courses = [], publicCourseIds = [] 
               <div className="mt-1 font-mono text-[13px]" dir="ltr">
                 {credentials.phone} / {credentials.password}
               </div>
-              {credentials.whatsApp && (
+              {credentials.whatsApp && credentials.whatsApp.status !== 'skipped' && (
                 <div className={`mt-2 text-xs ${
                   credentials.whatsApp.status === 'sent' ? 'text-success' : 'text-danger'
                 }`}>
@@ -387,14 +425,24 @@ export default function StudentAccessPanel({ courses = [], publicCourseIds = [] 
           )}
           <div className="flex flex-wrap items-center gap-2">
             {credentials && (
-              <button
-                type="button"
-                onClick={handleCopyCredentials}
-                className="inline-flex items-center gap-2 rounded-lg border border-border bg-white px-3 py-2 text-xs font-medium text-text-2 shadow-sm transition-colors hover:border-primary/40 hover:text-primary cursor-pointer"
-              >
-                <CopyIcon />
-                העתק
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={handleOpenWhatsAppWeb}
+                  className="inline-flex items-center gap-2 rounded-lg border border-success/30 bg-white px-3 py-2 text-xs font-medium text-success shadow-sm transition-colors hover:border-success/50 hover:bg-success/10 cursor-pointer"
+                >
+                  <WhatsAppIcon />
+                  WhatsApp Web
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCopyCredentials}
+                  className="inline-flex items-center gap-2 rounded-lg border border-border bg-white px-3 py-2 text-xs font-medium text-text-2 shadow-sm transition-colors hover:border-primary/40 hover:text-primary cursor-pointer"
+                >
+                  <CopyIcon />
+                  העתק
+                </button>
+              </>
             )}
             {status && (
               <span className={`text-xs ${status.type === 'error' ? 'text-danger' : 'text-success'}`}>

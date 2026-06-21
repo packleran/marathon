@@ -60,6 +60,8 @@ WhatsApp credential messages use the Meta WhatsApp Cloud API and must be sent wi
 
 If WhatsApp is not configured or Meta rejects the message, the student user is still created and the admin UI shows the failure so credentials can be copied manually.
 
+If you do not want to use WhatsApp Business Platform, set `WHATSAPP_SEND_CREDENTIALS=false`. The admin UI still shows a `WhatsApp Web` button after creating a user or resetting a password; it opens WhatsApp Web with a prefilled message, and the admin sends it manually.
+
 ### Student service variables
 
 ```env
