@@ -1,0 +1,426 @@
+import { useEffect, useMemo, useState } from 'react'
+import {
+  createStudent,
+  listStudents,
+  resetStudentDeviceLock,
+  resetStudentPassword,
+  revokeStudentSessions,
+  updateStudent,
+} from '../studentAccess'
+
+function IconButtonSvg({ path, className = 'h-4 w-4' }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8">
+      <path strokeLinecap="round" strokeLinejoin="round" d={path} />
+    </svg>
+  )
+}
+
+function KeyIcon() {
+  return <IconButtonSvg path="M15.75 7.5a5.25 5.25 0 11-2.95 4.73L21 4.03V7.5h-3.47v3.47h-3.47" />
+}
+
+function CopyIcon() {
+  return <IconButtonSvg path="M8.25 8.25h10.5v10.5H8.25z M5.25 15.75V5.25h10.5" />
+}
+
+function RefreshIcon() {
+  return <IconButtonSvg path="M16.02 9.35h4.07V5.28 M20.09 9.35A8.25 8.25 0 105.3 16.52" />
+}
+
+function BlockIcon() {
+  return <IconButtonSvg path="M18.36 5.64L5.64 18.36 M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+}
+
+function LogoutIcon() {
+  return <IconButtonSvg path="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6A2.25 2.25 0 005.25 5.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m-3-3H21m0 0l-3-3m3 3l-3 3" />
+}
+
+function CheckIcon() {
+  return <IconButtonSvg path="M4.5 12.75l5.25 5.25L19.5 6" />
+}
+
+function ShieldIcon() {
+  return <IconButtonSvg path="M12 3l7.5 3v5.25c0 4.64-3.1 8.8-7.5 10.05-4.4-1.25-7.5-5.41-7.5-10.05V6L12 3z M9.75 12.75l1.5 1.5 3-4" />
+}
+
+function formatDate(value) {
+  if (!value) return 'עדיין לא התחבר'
+
+  return new Intl.DateTimeFormat('he-IL', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  }).format(new Date(value))
+}
+
+function upsertStudent(students, nextStudent) {
+  const exists = students.some((student) => student.id === nextStudent.id)
+  if (!exists) return [nextStudent, ...students]
+
+  return students.map((student) => (
+    student.id === nextStudent.id ? nextStudent : student
+  ))
+}
+
+export default function StudentAccessPanel() {
+  const [students, setStudents] = useState([])
+  const [form, setForm] = useState({ phone: '', name: '', password: '' })
+  const [passwordMode, setPasswordMode] = useState('auto')
+  const [isLoading, setIsLoading] = useState(true)
+  const [isSaving, setIsSaving] = useState(false)
+  const [status, setStatus] = useState(null)
+  const [credentials, setCredentials] = useState(null)
+
+  const activeCount = useMemo(
+    () => students.filter((student) => student.active).length,
+    [students],
+  )
+
+  useEffect(() => {
+    let ignore = false
+
+    async function loadStudents() {
+      setIsLoading(true)
+      try {
+        const loadedStudents = await listStudents()
+        if (!ignore) {
+          setStudents(loadedStudents)
+          setStatus(null)
+        }
+      } catch {
+        if (!ignore) {
+          setStatus({ type: 'error', text: 'לא ניתן לטעון את רשימת הסטודנטים' })
+        }
+      } finally {
+        if (!ignore) setIsLoading(false)
+      }
+    }
+
+    loadStudents()
+
+    return () => {
+      ignore = true
+    }
+  }, [])
+
+  function updateForm(field, value) {
+    setForm((current) => ({ ...current, [field]: value }))
+  }
+
+  async function handleCreateStudent(event) {
+    event.preventDefault()
+    setIsSaving(true)
+    setStatus(null)
+    setCredentials(null)
+
+    try {
+      const data = await createStudent({
+        phone: form.phone,
+        name: form.name,
+        password: passwordMode === 'manual' ? form.password : '',
+      })
+      setStudents((current) => upsertStudent(current, data.student))
+      setCredentials({
+        phone: data.student.phone,
+        name: data.student.name,
+        password: data.password,
+      })
+      setForm({ phone: '', name: '', password: '' })
+      setPasswordMode('auto')
+      setStatus({ type: 'success', text: 'הגישה לסטודנט נפתחה' })
+    } catch (error) {
+      setStatus({ type: 'error', text: error.message })
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  async function handleResetPassword(student) {
+    if (!window.confirm(`לאפס סיסמה ל-${student.phone}?`)) return
+
+    setStatus(null)
+    setCredentials(null)
+
+    try {
+      const data = await resetStudentPassword(student.id)
+      setStudents((current) => upsertStudent(current, data.student))
+      setCredentials({
+        phone: data.student.phone,
+        name: data.student.name,
+        password: data.password,
+      })
+      setStatus({ type: 'success', text: 'הסיסמה אופסה' })
+    } catch (error) {
+      setStatus({ type: 'error', text: error.message })
+    }
+  }
+
+  async function handleToggleActive(student) {
+    const nextActive = !student.active
+    if (!nextActive && !window.confirm(`לחסום את הגישה של ${student.phone}?`)) return
+
+    setStatus(null)
+
+    try {
+      const data = await updateStudent(student.id, { active: nextActive })
+      setStudents((current) => upsertStudent(current, data.student))
+      setStatus({
+        type: 'success',
+        text: nextActive ? 'המשתמש הופעל' : 'המשתמש נחסם',
+      })
+    } catch (error) {
+      setStatus({ type: 'error', text: error.message })
+    }
+  }
+
+  async function handleRevokeSessions(student) {
+    if (!window.confirm(`לנתק את כל החיבורים הפעילים של ${student.phone}?`)) return
+
+    setStatus(null)
+
+    try {
+      const data = await revokeStudentSessions(student.id)
+      setStudents((current) => upsertStudent(current, data.student))
+      setStatus({
+        type: 'success',
+        text: data.revokedSessions > 0 ? 'החיבורים הפעילים נותקו' : 'לא היו חיבורים פעילים לניתוק',
+      })
+    } catch (error) {
+      setStatus({ type: 'error', text: error.message })
+    }
+  }
+
+  async function handleResetDeviceLock(student) {
+    if (!window.confirm(`לאפס את נעילת המכשיר של ${student.phone}? הכניסה הבאה תנעל מחשב חדש.`)) return
+
+    setStatus(null)
+
+    try {
+      const data = await resetStudentDeviceLock(student.id)
+      setStudents((current) => upsertStudent(current, data.student))
+      setStatus({
+        type: 'success',
+        text: data.revokedSessions > 0
+          ? 'נעילת המכשיר אופסה והחיבורים נותקו'
+          : 'נעילת המכשיר אופסה',
+      })
+    } catch (error) {
+      setStatus({ type: 'error', text: error.message })
+    }
+  }
+
+  async function handleCopyCredentials() {
+    if (!credentials) return
+
+    await navigator.clipboard.writeText([
+      credentials.name ? `שם: ${credentials.name}` : null,
+      `שם משתמש: ${credentials.phone}`,
+      `סיסמה: ${credentials.password}`,
+    ].filter(Boolean).join('\n'))
+    setStatus({ type: 'success', text: 'פרטי הכניסה הועתקו' })
+  }
+
+  return (
+    <section className="mb-6 rounded-2xl border border-border bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+      <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-text">
+            <KeyIcon />
+            גישה לסטודנטים
+          </h2>
+          <p className="mt-1 text-xs leading-5 text-text-muted">
+            פתיחת משתמש אחרי תשלום. הכניסה הראשונה נועלת את המשתמש למחשב הראשון, והסיסמה מוצגת כאן רק פעם אחת.
+          </p>
+        </div>
+        <div className="inline-flex w-fit items-center gap-2 rounded-full bg-primary-soft px-3 py-1 text-xs font-semibold text-primary">
+          {activeCount} פעילים
+        </div>
+      </div>
+
+      <form noValidate onSubmit={handleCreateStudent} className="grid gap-3 lg:grid-cols-[1fr_1fr_1.2fr_auto] lg:items-end">
+        <label className="text-xs font-semibold uppercase tracking-wider text-text-muted">
+          טלפון
+          <input
+            value={form.phone}
+            onChange={(event) => updateForm('phone', event.target.value)}
+            inputMode="tel"
+            placeholder="0521234567"
+            className="mt-1.5 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm font-normal text-text outline-none focus:border-primary focus:ring-2 focus:ring-primary-soft"
+            required
+          />
+        </label>
+
+        <label className="text-xs font-semibold uppercase tracking-wider text-text-muted">
+          שם
+          <input
+            value={form.name}
+            onChange={(event) => updateForm('name', event.target.value)}
+            placeholder="שם הסטודנט"
+            className="mt-1.5 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm font-normal text-text outline-none focus:border-primary focus:ring-2 focus:ring-primary-soft"
+          />
+        </label>
+
+        <div>
+          <div className="mb-1.5 flex items-center gap-1 rounded-lg border border-border bg-inset p-1 shadow-sm">
+            <button
+              type="button"
+              onClick={() => setPasswordMode('auto')}
+              className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer ${
+                passwordMode === 'auto'
+                  ? 'bg-white text-primary shadow-sm'
+                  : 'text-text-muted hover:bg-white hover:text-text'
+              }`}
+            >
+              סיסמה אוטומטית
+            </button>
+            <button
+              type="button"
+              onClick={() => setPasswordMode('manual')}
+              className={`flex-1 rounded-md px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer ${
+                passwordMode === 'manual'
+                  ? 'bg-white text-primary shadow-sm'
+                  : 'text-text-muted hover:bg-white hover:text-text'
+              }`}
+            >
+              סיסמה ידנית
+            </button>
+          </div>
+          <input
+            value={form.password}
+            onChange={(event) => updateForm('password', event.target.value)}
+            disabled={passwordMode === 'auto'}
+            placeholder={passwordMode === 'auto' ? 'תיווצר אוטומטית' : 'לפחות 8 תווים'}
+            className="w-full rounded-xl border border-border bg-white px-3 py-2 text-sm text-text outline-none focus:border-primary focus:ring-2 focus:ring-primary-soft disabled:bg-inset disabled:text-text-muted"
+          />
+        </div>
+
+        <button
+          type="submit"
+          disabled={isSaving || !form.phone.trim() || (passwordMode === 'manual' && form.password.length < 8)}
+          className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+        >
+          <KeyIcon />
+          פתח גישה
+        </button>
+      </form>
+
+      {(status || credentials) && (
+        <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          {credentials && (
+            <div className="rounded-xl border border-success/20 bg-success/10 px-4 py-3 text-sm text-text">
+              <div className="font-semibold text-success">פרטי כניסה למסירה לסטודנט</div>
+              <div className="mt-1 font-mono text-[13px]" dir="ltr">
+                {credentials.phone} / {credentials.password}
+              </div>
+            </div>
+          )}
+          <div className="flex flex-wrap items-center gap-2">
+            {credentials && (
+              <button
+                type="button"
+                onClick={handleCopyCredentials}
+                className="inline-flex items-center gap-2 rounded-lg border border-border bg-white px-3 py-2 text-xs font-medium text-text-2 shadow-sm transition-colors hover:border-primary/40 hover:text-primary cursor-pointer"
+              >
+                <CopyIcon />
+                העתק
+              </button>
+            )}
+            {status && (
+              <span className={`text-xs ${status.type === 'error' ? 'text-danger' : 'text-success'}`}>
+                {status.text}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className="mt-5 overflow-hidden rounded-xl border border-border-subtle">
+        <div className="grid grid-cols-[1fr_auto] gap-3 bg-inset px-4 py-2 text-xs font-semibold text-text-muted md:grid-cols-[1.1fr_1fr_1fr_auto]">
+          <span>טלפון</span>
+          <span className="hidden md:block">שם</span>
+          <span className="hidden md:block">חיבור</span>
+          <span>פעולות</span>
+        </div>
+
+        {isLoading ? (
+          <div className="px-4 py-5 text-sm text-text-muted">טוען סטודנטים...</div>
+        ) : students.length === 0 ? (
+          <div className="px-4 py-5 text-sm text-text-muted">עדיין לא נפתחו משתמשי סטודנטים.</div>
+        ) : (
+          <div className="divide-y divide-border-subtle">
+            {students.map((student) => (
+              <div
+                key={student.id}
+                className="grid grid-cols-[1fr_auto] gap-3 px-4 py-3 text-sm md:grid-cols-[1.1fr_1fr_1fr_auto] md:items-center"
+              >
+                <div>
+                  <div className="font-mono text-[13px] font-semibold text-text" dir="ltr">{student.phone}</div>
+                  <div className={`mt-1 text-xs ${student.active ? 'text-success' : 'text-danger'}`}>
+                    {student.active ? 'פעיל' : 'חסום'}
+                  </div>
+                </div>
+                <div className="hidden text-text-2 md:block">{student.name || '-'}</div>
+                <div className="hidden md:block">
+                  <div className={student.activeSessionCount > 0 ? 'font-semibold text-success' : 'text-text-muted'}>
+                    {student.activeSessionCount > 0 ? 'מחובר עכשיו' : 'לא מחובר'}
+                  </div>
+                  <div className="mt-1 text-xs text-text-muted">{formatDate(student.lastLoginAt)}</div>
+                  <div className="mt-1 font-mono text-xs text-text-muted" dir="ltr">
+                    {student.lockedDevice
+                      ? `Device: locked${student.lockedDeviceIpAddress ? ` (${student.lockedDeviceIpAddress})` : ''}`
+                      : 'Device: pending'}
+                  </div>
+                  {student.lastDeniedIpAddress && (
+                    <div className="mt-1 text-xs text-danger">
+                      ניסיון חסום: <span className="font-mono" dir="ltr">{student.lastDeniedIpAddress}</span>
+                    </div>
+                  )}
+                </div>
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleResetPassword(student)}
+                    className="inline-flex items-center gap-2 rounded-lg border border-border bg-white px-3 py-2 text-xs font-medium text-text-2 shadow-sm transition-colors hover:border-primary/40 hover:text-primary cursor-pointer"
+                  >
+                    <RefreshIcon />
+                    איפוס
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleRevokeSessions(student)}
+                    disabled={student.activeSessionCount < 1}
+                    className="inline-flex items-center gap-2 rounded-lg border border-border bg-white px-3 py-2 text-xs font-medium text-text-2 shadow-sm transition-colors hover:border-primary/40 hover:text-primary disabled:cursor-not-allowed disabled:opacity-40 cursor-pointer"
+                  >
+                    <LogoutIcon />
+                    נתק
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleResetDeviceLock(student)}
+                    disabled={!student.lockedDevice && !student.lastDeniedIpAddress}
+                    className="inline-flex items-center gap-2 rounded-lg border border-border bg-white px-3 py-2 text-xs font-medium text-text-2 shadow-sm transition-colors hover:border-primary/40 hover:text-primary disabled:cursor-not-allowed disabled:opacity-40 cursor-pointer"
+                  >
+                    <ShieldIcon />
+                    אפס מכשיר
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleActive(student)}
+                    className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium shadow-sm transition-colors cursor-pointer ${
+                      student.active
+                        ? 'border-danger/20 bg-white text-danger hover:bg-danger/10'
+                        : 'border-success/20 bg-white text-success hover:bg-success/10'
+                    }`}
+                  >
+                    {student.active ? <BlockIcon /> : <CheckIcon />}
+                    {student.active ? 'חסום' : 'הפעל'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}

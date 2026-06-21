@@ -3,8 +3,10 @@ import Header from './Header'
 import MeetingsSection from './MeetingsSection'
 import RecordingsSection from './RecordingsSection'
 import Sidebar from './Sidebar'
+import StudentAccessPanel from './StudentAccessPanel'
 import { courses } from '../data'
 import { getCourseTheme } from '../theme'
+import { loadAppConfig, logoutStudent } from '../studentAccess'
 import { duplicateCourseMaterials } from '../uploadedMaterials'
 import {
   addCustomCourseOverride,
@@ -126,6 +128,10 @@ function EyeIcon() {
   return <IconButtonSvg path="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.64 0 8.577 3.01 9.964 7.183.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.64 0-8.577-3.01-9.964-7.178z M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
 }
 
+function LogoutIcon() {
+  return <IconButtonSvg path="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6A2.25 2.25 0 005.25 5.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m-3-3H21m0 0l-3-3m3 3l-3 3" />
+}
+
 function ModeToolbar({
   isAdminMode,
   onAdminView,
@@ -189,6 +195,36 @@ function ModeToolbar({
             </button>
           )}
         </div>
+      </div>
+    </div>
+  )
+}
+
+function StudentAccountBar({ student, onLogout }) {
+  if (!student) return null
+
+  return (
+    <div className="border-b border-border bg-white/85 backdrop-blur">
+      <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-5 py-3 md:px-8">
+        <div className="min-w-0">
+          <div className="text-xs font-semibold text-text-muted">מחובר כסטודנט</div>
+          <div className="truncate text-sm font-semibold text-text">
+            {student.name || student.phone}
+            {student.name && (
+              <span className="mr-2 font-mono text-[13px] font-medium text-text-muted" dir="ltr">
+                {student.phone}
+              </span>
+            )}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={onLogout}
+          className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-border bg-white px-3 py-2 text-xs font-medium text-text-2 shadow-sm transition-colors hover:border-danger/30 hover:text-danger cursor-pointer"
+        >
+          <LogoutIcon />
+          יציאה
+        </button>
       </div>
     </div>
   )
@@ -408,6 +444,7 @@ export default function CourseDashboard() {
   const [focusedMeetingId, setFocusedMeetingId] = useState(null)
   const [contentSyncStatus, setContentSyncStatus] = useState(null)
   const [remoteRefreshToken, setRemoteRefreshToken] = useState(0)
+  const [studentSession, setStudentSession] = useState(null)
   const contentOverridesRef = useRef(contentOverrides)
 
   const editableCourses = useMemo(
@@ -422,6 +459,24 @@ export default function CourseDashboard() {
   useEffect(() => {
     contentOverridesRef.current = contentOverrides
   }, [contentOverrides])
+
+  useEffect(() => {
+    if (IS_ADMIN_DEPLOYMENT) return
+
+    let ignore = false
+
+    loadAppConfig()
+      .then((config) => {
+        if (!ignore) setStudentSession(config.student ?? null)
+      })
+      .catch(() => {
+        if (!ignore) setStudentSession(null)
+      })
+
+    return () => {
+      ignore = true
+    }
+  }, [])
 
   useEffect(() => {
     let ignore = false
@@ -515,6 +570,11 @@ export default function CourseDashboard() {
     link.download = `marathon-content-${new Date().toISOString().slice(0, 10)}.json`
     link.click()
     URL.revokeObjectURL(url)
+  }
+
+  async function handleLogoutStudent() {
+    await logoutStudent().catch(() => {})
+    window.location.assign('/')
   }
 
   function handleSelectCourse(courseId) {
@@ -621,6 +681,9 @@ export default function CourseDashboard() {
   return (
     <div className="min-h-screen">
       <Header course={course} />
+      {!IS_ADMIN_DEPLOYMENT && (
+        <StudentAccountBar student={studentSession} onLogout={handleLogoutStudent} />
+      )}
       {IS_ADMIN_DEPLOYMENT && (
         <ModeToolbar
           isAdminMode={isAdminMode}
@@ -632,6 +695,8 @@ export default function CourseDashboard() {
       )}
 
       <main className="mx-auto max-w-7xl px-5 py-7 md:px-8">
+        {IS_ADMIN_DEPLOYMENT && isAdminMode && <StudentAccessPanel />}
+
         <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-1 overflow-x-auto rounded-[14px] border border-border bg-surface p-1 shadow-sm">
             {visibleCourses.map((c) => {
