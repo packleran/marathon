@@ -5,6 +5,7 @@ import { createHash, randomBytes, randomUUID, scrypt as scryptCallback, timingSa
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import pg from 'pg'
+import { courses } from '../src/data.js'
 
 const { Pool } = pg
 const scrypt = promisify(scryptCallback)
@@ -35,6 +36,14 @@ const studentSessionDays = Number.isFinite(configuredStudentSessionDays)
 const disabledAuthValues = new Set(['0', 'false', 'no', 'off'])
 const studentSingleSession = !disabledAuthValues.has(String(process.env.STUDENT_SINGLE_SESSION ?? 'true').toLowerCase())
 const studentDeviceLock = !disabledAuthValues.has(String(process.env.STUDENT_DEVICE_LOCK ?? 'true').toLowerCase())
+const studentPublicCourseIds = normalizeCourseIds(process.env.STUDENT_PUBLIC_COURSE_IDS ?? 'computational')
+const studentPublicCourseIdSet = new Set(studentPublicCourseIds)
+const whatsAppCredentialsEnabled = !disabledAuthValues.has(String(process.env.WHATSAPP_SEND_CREDENTIALS ?? 'true').toLowerCase())
+const whatsAppGraphApiVersion = process.env.WHATSAPP_GRAPH_API_VERSION ?? 'v25.0'
+const whatsAppPhoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID ?? ''
+const whatsAppAccessToken = process.env.WHATSAPP_ACCESS_TOKEN ?? ''
+const whatsAppTemplateName = process.env.WHATSAPP_TEMPLATE_NAME ?? 'student_login_details'
+const whatsAppTemplateLanguage = process.env.WHATSAPP_TEMPLATE_LANGUAGE ?? 'he'
 const passwordScryptOptions = { N: 16384, r: 8, p: 1, maxmem: 32 * 1024 * 1024 }
 const pool = databaseUrl
   ? new Pool({
@@ -63,6 +72,18 @@ function isStudentDeviceLockRequired() {
   return isStudentAuthRequired() && studentDeviceLock
 }
 
+function isStudentDeviceLockRequiredForCourseIds(courseIds) {
+  return isStudentDeviceLockRequired() && !hasOnlyPublicCourses(courseIds)
+}
+
+function isStudentSingleSessionRequiredForCourseIds(courseIds) {
+  return isStudentSingleSessionRequired() && !hasOnlyPublicCourses(courseIds)
+}
+
+function isWhatsAppConfigured() {
+  return whatsAppCredentialsEnabled && Boolean(whatsAppPhoneNumberId && whatsAppAccessToken)
+}
+
 function normalizePhone(value) {
   const digits = String(value ?? '').replace(/\D/g, '')
   if (digits.startsWith('972') && digits.length >= 11) {
@@ -74,6 +95,30 @@ function normalizePhone(value) {
 
 function isValidPhone(phone) {
   return phone.length >= 8 && phone.length <= 15
+}
+
+function normalizeCourseIds(value) {
+  const values = Array.isArray(value) ? value : [value]
+  return [...new Set(values
+    .map((item) => String(item ?? '').trim())
+    .filter(Boolean))]
+}
+
+function isPublicCourseId(courseId) {
+  return studentPublicCourseIdSet.has(String(courseId ?? '').trim())
+}
+
+function hasOnlyPublicCourses(courseIds) {
+  const normalizedCourseIds = normalizeCourseIds(courseIds)
+  return normalizedCourseIds.length > 0 && normalizedCourseIds.every((courseId) => isPublicCourseId(courseId))
+}
+
+function toWhatsAppPhoneNumber(value) {
+  const digits = String(value ?? '').replace(/\D/g, '')
+  if (digits.startsWith('972')) return digits
+  if (digits.startsWith('0')) return `972${digits.slice(1)}`
+
+  return digits
 }
 
 function generatePassword(length = 10) {
@@ -210,11 +255,15 @@ function requestUserAgent(req) {
 }
 
 function serializeStudent(row) {
+  const courseIds = normalizeCourseIds(row.course_ids ?? [])
+
   return {
     id: row.id,
     phone: row.phone,
     name: row.name,
     active: row.active,
+    courseIds,
+    publicAccessOnly: hasOnlyPublicCourses(courseIds),
     activeSessionCount: Number(row.active_session_count ?? 0),
     lockedDevice: Boolean(row.locked_device_id),
     lockedDeviceAt: toIso(row.locked_device_at),
@@ -227,6 +276,188 @@ function serializeStudent(row) {
     updatedAt: toIso(row.updated_at),
     lastLoginAt: toIso(row.last_login_at),
   }
+}
+
+function createWhatsAppStatus(status, text, extra = {}) {
+  return { status, text, ...extra }
+}
+
+async function sendCredentialsWhatsApp({ student, password }) {
+  if (!whatsAppCredentialsEnabled) {
+    return createWhatsAppStatus('skipped', 'שליחת WhatsApp כבויה')
+  }
+
+  if (!isWhatsAppConfigured()) {
+    return createWhatsAppStatus('skipped', 'WhatsApp לא מוגדר בשרת')
+  }
+
+  const to = toWhatsAppPhoneNumber(student.phone)
+  if (!to) {
+    return createWhatsAppStatus('skipped', 'אין מספר טלפון תקין לשליחת WhatsApp')
+  }
+
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 15000)
+
+  try {
+    const response = await fetch(
+      `https://graph.facebook.com/${whatsAppGraphApiVersion}/${encodeURIComponent(whatsAppPhoneNumberId)}/messages`,
+      {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          Authorization: `Bearer ${whatsAppAccessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          to,
+          type: 'template',
+          template: {
+            name: whatsAppTemplateName,
+            language: { code: whatsAppTemplateLanguage },
+            components: [
+              {
+                type: 'body',
+                parameters: [
+                  { type: 'text', text: student.name || student.phone },
+                  { type: 'text', text: student.phone },
+                  { type: 'text', text: password },
+                ],
+              },
+            ],
+          },
+        }),
+      },
+    )
+
+    const data = await response.json().catch(() => ({}))
+    const messageId = data.messages?.[0]?.id
+
+    if (!response.ok) {
+      return createWhatsAppStatus(
+        'failed',
+        data.error?.message ? `WhatsApp נכשל: ${data.error.message}` : `WhatsApp נכשל עם סטטוס ${response.status}`,
+      )
+    }
+
+    return createWhatsAppStatus('sent', 'נשלחה הודעת WhatsApp', {
+      messageId,
+      to,
+    })
+  } catch (error) {
+    return createWhatsAppStatus(
+      'failed',
+      error.name === 'AbortError' ? 'WhatsApp נכשל: זמן ההמתנה הסתיים' : `WhatsApp נכשל: ${error.message}`,
+    )
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+function shouldEnforceStudentCourseAccess() {
+  return isStudentAuthRequired() && !isAdminService
+}
+
+function getAccessibleCourseIdsForRequest(req) {
+  const allowedCourseIds = new Set(studentPublicCourseIds)
+  normalizeCourseIds(req.student?.courseIds).forEach((courseId) => allowedCourseIds.add(courseId))
+
+  return [...allowedCourseIds]
+}
+
+function studentCanAccessCourse(req, courseId) {
+  if (!shouldEnforceStudentCourseAccess()) return true
+
+  const normalizedCourseId = String(courseId ?? '').trim()
+  return getAccessibleCourseIdsForRequest(req).includes(normalizedCourseId)
+}
+
+function rejectStudentCourseAccess(res) {
+  res.status(403).json({ error: 'This student is not assigned to this course' })
+}
+
+function requireStudentCourseFromQuery(req, res, next) {
+  if (!studentCanAccessCourse(req, req.query.courseId)) {
+    rejectStudentCourseAccess(res)
+    return
+  }
+
+  next()
+}
+
+function filterContentOverridesForCourses(overrides, courseIds) {
+  const allowedCourseIds = new Set(normalizeCourseIds(courseIds))
+  if (allowedCourseIds.size === 0) return {}
+
+  const filtered = {}
+
+  Object.entries(overrides ?? {}).forEach(([key, value]) => {
+    if (key === 'customCourses') {
+      const customCourses = Array.isArray(value)
+        ? value.filter((course) => allowedCourseIds.has(String(course.id)))
+        : []
+      if (customCourses.length > 0) filtered.customCourses = customCourses
+      return
+    }
+
+    if (key === 'deletedCourseIds') {
+      const deletedCourseIds = Array.isArray(value)
+        ? value.filter((courseId) => allowedCourseIds.has(String(courseId)))
+        : []
+      if (deletedCourseIds.length > 0) filtered.deletedCourseIds = deletedCourseIds
+      return
+    }
+
+    if (allowedCourseIds.has(String(key))) {
+      filtered[key] = value
+    }
+  })
+
+  return filtered
+}
+
+function filterCoursesForIds(courseList, courseIds) {
+  const allowedCourseIds = new Set(normalizeCourseIds(courseIds))
+  if (allowedCourseIds.size === 0) return []
+
+  return courseList.filter((course) => allowedCourseIds.has(String(course.id)))
+}
+
+function getCoursesForRequest(req) {
+  if (!shouldEnforceStudentCourseAccess()) return courses
+
+  return filterCoursesForIds(courses, getAccessibleCourseIdsForRequest(req))
+}
+
+function isPublicStudentApiRequest(req) {
+  if (!req.path.startsWith('/api/')) return false
+
+  return (
+    req.path === '/api/content' ||
+    req.path === '/api/content/events' ||
+    req.path === '/api/materials' ||
+    req.path.startsWith('/api/materials/') ||
+    req.path === '/api/deleted-materials' ||
+    req.path === '/api/requests' ||
+    req.path.startsWith('/api/requests/')
+  )
+}
+
+function isPublicStudentAppShellRequest(req) {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return false
+  if (req.path.startsWith('/assets/')) return true
+  if (req.path === '/favicon.svg' || req.path === '/icons.svg') return true
+
+  return !path.extname(req.path) && req.accepts('html')
+}
+
+function canServeAnonymousStudentRequest(req) {
+  return (
+    shouldEnforceStudentCourseAccess() &&
+    studentPublicCourseIds.length > 0 &&
+    (isPublicStudentApiRequest(req) || isPublicStudentAppShellRequest(req))
+  )
 }
 
 function htmlJson(value) {
@@ -439,6 +670,7 @@ async function getAuthenticatedStudent(req) {
   await ensureDb()
   const result = await pool.query(
     `SELECT students.id, students.phone, students.name, students.active,
+            students.course_ids,
             students.locked_device_id, students.locked_device_at,
             students.locked_device_ip_address, students.locked_device_user_agent,
             students.last_denied_ip_address, students.last_denied_user_agent, students.last_denied_at,
@@ -457,7 +689,11 @@ async function getAuthenticatedStudent(req) {
   const lockedDeviceId = String(studentRow.locked_device_id ?? '')
   const deviceToken = parseCookies(req)[studentDeviceCookie]
   const currentDeviceId = deviceToken ? hashDeviceToken(deviceToken) : ''
-  if (isStudentDeviceLockRequired() && lockedDeviceId && currentDeviceId !== lockedDeviceId) {
+  if (
+    isStudentDeviceLockRequiredForCourseIds(studentRow.course_ids) &&
+    lockedDeviceId &&
+    currentDeviceId !== lockedDeviceId
+  ) {
     await pool.query(
       `UPDATE marathon_students
        SET last_denied_ip_address = $2,
@@ -488,6 +724,11 @@ async function requireStudentAuth(req, res, next) {
   const student = await getAuthenticatedStudent(req)
   if (student) {
     req.student = student
+    next()
+    return
+  }
+
+  if (canServeAnonymousStudentRequest(req)) {
     next()
     return
   }
@@ -596,6 +837,7 @@ async function ensureDb() {
           name text NOT NULL DEFAULT '',
           password_hash text NOT NULL,
           active boolean NOT NULL DEFAULT true,
+          course_ids jsonb NOT NULL DEFAULT '[]'::jsonb,
           locked_device_id text NOT NULL DEFAULT '',
           locked_device_at timestamptz,
           locked_device_ip_address text NOT NULL DEFAULT '',
@@ -631,6 +873,9 @@ async function ensureDb() {
 
         CREATE INDEX IF NOT EXISTS marathon_students_active_idx
           ON marathon_students (active);
+
+        ALTER TABLE marathon_students
+          ADD COLUMN IF NOT EXISTS course_ids jsonb NOT NULL DEFAULT '[]'::jsonb;
 
         CREATE TABLE IF NOT EXISTS marathon_student_sessions (
           id text PRIMARY KEY,
@@ -759,7 +1004,18 @@ app.get('/api/config', asyncHandler(async (req, res) => {
     canEditContent: isAdminService,
     hasDatabase: Boolean(pool),
     studentAuthRequired: isStudentAuthRequired(),
+    publicCourseIds: studentPublicCourseIds,
     student,
+  })
+}))
+
+app.get('/api/courses', asyncHandler(async (req, res) => {
+  const student = await getAuthenticatedStudent(req)
+  if (student) req.student = student
+
+  res.json({
+    courses: getCoursesForRequest(req),
+    publicCourseIds: studentPublicCourseIds,
   })
 }))
 
@@ -780,6 +1036,7 @@ app.post('/api/student-auth/login', requireDatabase, asyncHandler(async (req, re
 
   const result = await pool.query(
     `SELECT id, phone, name, active, password_hash,
+            course_ids,
             locked_device_id, locked_device_at, locked_device_ip_address, locked_device_user_agent,
             last_denied_ip_address, last_denied_user_agent, last_denied_at,
             created_at, updated_at, last_login_at
@@ -807,8 +1064,10 @@ app.post('/api/student-auth/login', requireDatabase, asyncHandler(async (req, re
     deviceToken = randomBytes(32).toString('base64url')
   }
   const currentDeviceId = hashDeviceToken(deviceToken)
+  const shouldUseDeviceLock = isStudentDeviceLockRequiredForCourseIds(studentRow.course_ids)
+  const shouldUseSingleSession = isStudentSingleSessionRequiredForCourseIds(studentRow.course_ids)
 
-  if (isStudentDeviceLockRequired()) {
+  if (shouldUseDeviceLock) {
     if (studentRow.locked_device_id && studentRow.locked_device_id !== currentDeviceId) {
       await pool.query(
         `UPDATE marathon_students
@@ -836,6 +1095,7 @@ app.post('/api/student-auth/login', requireDatabase, asyncHandler(async (req, re
        WHERE id = $1
          AND (locked_device_id = '' OR locked_device_id = $2)
        RETURNING id, phone, name, active, password_hash,
+                 course_ids,
                  locked_device_id, locked_device_at, locked_device_ip_address, locked_device_user_agent,
                  last_denied_ip_address, last_denied_user_agent, last_denied_at,
                  created_at, updated_at, last_login_at`,
@@ -868,8 +1128,8 @@ app.post('/api/student-auth/login', requireDatabase, asyncHandler(async (req, re
   const currentSessionId = currentSessionToken ? hashSessionToken(currentSessionToken) : ''
 
   await pool.query('DELETE FROM marathon_student_sessions WHERE expires_at <= now()')
-  if (isStudentSingleSessionRequired()) {
-    if (!isStudentDeviceLockRequired()) {
+  if (shouldUseSingleSession) {
+    if (!shouldUseDeviceLock) {
       const activeSessions = await pool.query(
         `SELECT id
          FROM marathon_student_sessions
@@ -901,13 +1161,14 @@ app.post('/api/student-auth/login', requireDatabase, asyncHandler(async (req, re
      SET last_login_at = now(), updated_at = now()
      WHERE id = $1
      RETURNING id, phone, name, active,
+               course_ids,
                locked_device_id, locked_device_at, locked_device_ip_address, locked_device_user_agent,
                last_denied_ip_address, last_denied_user_agent, last_denied_at,
                created_at, updated_at, last_login_at`,
     [studentRow.id],
   )
 
-  if (isStudentDeviceLockRequired()) {
+  if (shouldUseDeviceLock) {
     setStudentDeviceCookie(req, res, deviceToken)
   }
   setStudentSessionCookie(req, res, token, expiresAt)
@@ -938,6 +1199,7 @@ app.get('/api/students', requireDatabase, requireAdmin, asyncHandler(async (_req
   await ensureDb()
   const result = await pool.query(
     `SELECT students.id, students.phone, students.name, students.active,
+            students.course_ids,
             students.locked_device_id, students.locked_device_at,
             students.locked_device_ip_address, students.locked_device_user_agent,
             students.last_denied_ip_address, students.last_denied_user_agent, students.last_denied_at,
@@ -956,6 +1218,7 @@ app.post('/api/students', requireDatabase, requireAdmin, asyncHandler(async (req
   await ensureDb()
   const phone = normalizePhone(req.body?.phone)
   const name = String(req.body?.name ?? '').trim()
+  const courseIds = normalizeCourseIds(req.body?.courseIds)
   const requestedPassword = String(req.body?.password ?? '').trim()
   const password = requestedPassword || generatePassword()
 
@@ -969,20 +1232,29 @@ app.post('/api/students', requireDatabase, requireAdmin, asyncHandler(async (req
     return
   }
 
+  if (courseIds.length === 0) {
+    res.status(400).json({ error: 'Student must be assigned to a course' })
+    return
+  }
+
   const passwordHash = await hashPassword(password)
 
   try {
     const result = await pool.query(
-      `INSERT INTO marathon_students (id, phone, name, password_hash, active)
-       VALUES ($1, $2, $3, $4, true)
+      `INSERT INTO marathon_students (id, phone, name, password_hash, active, course_ids)
+       VALUES ($1, $2, $3, $4, true, $5::jsonb)
        RETURNING id, phone, name, active,
+                 course_ids,
                  locked_device_id, locked_device_at, locked_device_ip_address, locked_device_user_agent,
                  last_denied_ip_address, last_denied_user_agent, last_denied_at,
                  created_at, updated_at, last_login_at`,
-      [createId(), phone, name, passwordHash],
+      [createId(), phone, name, passwordHash, JSON.stringify(courseIds)],
     )
 
-    res.status(201).json({ student: serializeStudent(result.rows[0]), password })
+    const student = result.rows[0]
+    const whatsApp = await sendCredentialsWhatsApp({ student, password })
+
+    res.status(201).json({ student: serializeStudent(student), password, whatsApp })
   } catch (error) {
     if (error.code === '23505') {
       res.status(409).json({ error: 'Student already exists' })
@@ -997,20 +1269,29 @@ app.patch('/api/students/:id', requireDatabase, requireAdmin, asyncHandler(async
   await ensureDb()
   const hasName = Object.hasOwn(req.body ?? {}, 'name')
   const hasActive = Object.hasOwn(req.body ?? {}, 'active')
+  const hasCourseIds = Object.hasOwn(req.body ?? {}, 'courseIds')
   const nextName = hasName ? String(req.body.name ?? '').trim() : null
   const nextActive = hasActive ? Boolean(req.body.active) : null
+  const nextCourseIds = hasCourseIds ? normalizeCourseIds(req.body.courseIds) : null
+
+  if (hasCourseIds && nextCourseIds.length === 0) {
+    res.status(400).json({ error: 'Student must be assigned to a course' })
+    return
+  }
 
   const result = await pool.query(
     `UPDATE marathon_students
      SET name = CASE WHEN $2::boolean THEN $3 ELSE name END,
          active = COALESCE($4, active),
+         course_ids = CASE WHEN $5::boolean THEN $6::jsonb ELSE course_ids END,
          updated_at = now()
      WHERE id = $1
      RETURNING id, phone, name, active,
+               course_ids,
                locked_device_id, locked_device_at, locked_device_ip_address, locked_device_user_agent,
                last_denied_ip_address, last_denied_user_agent, last_denied_at,
                created_at, updated_at, last_login_at`,
-    [req.params.id, hasName, nextName, nextActive],
+    [req.params.id, hasName, nextName, nextActive, hasCourseIds, JSON.stringify(nextCourseIds ?? [])],
   )
 
   if (result.rowCount === 0) {
@@ -1033,6 +1314,7 @@ app.post('/api/students/:id/sessions/revoke', requireDatabase, requireAdmin, asy
   )
   const result = await pool.query(
     `SELECT id, phone, name, active,
+            course_ids,
             locked_device_id, locked_device_at, locked_device_ip_address, locked_device_user_agent,
             last_denied_ip_address, last_denied_user_agent, last_denied_at,
             created_at, updated_at, last_login_at,
@@ -1071,6 +1353,7 @@ app.post('/api/students/:id/device-lock/reset', requireDatabase, requireAdmin, a
          updated_at = now()
      WHERE id = $1
      RETURNING id, phone, name, active,
+               course_ids,
                locked_device_id, locked_device_at, locked_device_ip_address, locked_device_user_agent,
                last_denied_ip_address, last_denied_user_agent, last_denied_at,
                created_at, updated_at, last_login_at,
@@ -1105,6 +1388,7 @@ app.post('/api/students/:id/password', requireDatabase, requireAdmin, asyncHandl
      SET password_hash = $2, active = true, updated_at = now()
      WHERE id = $1
      RETURNING id, phone, name, active,
+               course_ids,
                locked_device_id, locked_device_at, locked_device_ip_address, locked_device_user_agent,
                last_denied_ip_address, last_denied_user_agent, last_denied_at,
                created_at, updated_at, last_login_at`,
@@ -1118,12 +1402,15 @@ app.post('/api/students/:id/password', requireDatabase, requireAdmin, asyncHandl
 
   await pool.query('DELETE FROM marathon_student_sessions WHERE student_id = $1', [req.params.id])
 
-  res.json({ student: serializeStudent(result.rows[0]), password })
+  const student = result.rows[0]
+  const whatsApp = await sendCredentialsWhatsApp({ student, password })
+
+  res.json({ student: serializeStudent(student), password, whatsApp })
 }))
 
 app.use(asyncHandler(requireStudentAuth))
 
-app.get('/api/content', asyncHandler(async (_req, res) => {
+app.get('/api/content', asyncHandler(async (req, res) => {
   if (!pool) {
     res.json({ overrides: {}, updatedAt: null, shared: false })
     return
@@ -1131,9 +1418,12 @@ app.get('/api/content', asyncHandler(async (_req, res) => {
 
   await ensureDb()
   const result = await pool.query('SELECT overrides, updated_at FROM marathon_content WHERE id = $1', ['default'])
+  const overrides = shouldEnforceStudentCourseAccess()
+    ? filterContentOverridesForCourses(result.rows[0]?.overrides ?? {}, getAccessibleCourseIdsForRequest(req))
+    : result.rows[0]?.overrides ?? {}
 
   res.json({
-    overrides: result.rows[0]?.overrides ?? {},
+    overrides,
     updatedAt: result.rows[0]?.updated_at?.toISOString() ?? null,
   })
 }))
@@ -1175,7 +1465,7 @@ app.get('/api/content/events', asyncHandler(async (req, res) => {
   })
 }))
 
-app.get('/api/materials', requireDatabase, asyncHandler(async (req, res) => {
+app.get('/api/materials', requireDatabase, requireStudentCourseFromQuery, asyncHandler(async (req, res) => {
   await ensureDb()
   const { courseId, meetingId } = req.query
   const result = await pool.query(
@@ -1237,7 +1527,7 @@ app.post('/api/materials', requireDatabase, requireAdmin, upload.single('file'),
 app.get('/api/materials/:id/file', requireDatabase, asyncHandler(async (req, res) => {
   await ensureDb()
   const result = await pool.query(
-    'SELECT file_name, type, data FROM marathon_materials WHERE id = $1',
+    'SELECT course_id, file_name, type, data FROM marathon_materials WHERE id = $1',
     [req.params.id],
   )
 
@@ -1247,6 +1537,11 @@ app.get('/api/materials/:id/file', requireDatabase, asyncHandler(async (req, res
   }
 
   const row = result.rows[0]
+  if (!studentCanAccessCourse(req, row.course_id)) {
+    rejectStudentCourseAccess(res)
+    return
+  }
+
   res.setHeader('Content-Type', row.type)
   res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(row.file_name)}"`)
   res.send(row.data)
@@ -1358,7 +1653,7 @@ app.post('/api/courses/:sourceCourseId/materials/duplicate', requireDatabase, re
   })
 }))
 
-app.get('/api/deleted-materials', requireDatabase, asyncHandler(async (req, res) => {
+app.get('/api/deleted-materials', requireDatabase, requireStudentCourseFromQuery, asyncHandler(async (req, res) => {
   await ensureDb()
   const { courseId, meetingId } = req.query
   const result = await pool.query(
@@ -1388,7 +1683,7 @@ app.post('/api/deleted-materials', requireDatabase, requireAdmin, asyncHandler(a
   res.status(201).json({ deletedMaterial: result.rows[0] })
 }))
 
-app.get('/api/requests', requireDatabase, asyncHandler(async (req, res) => {
+app.get('/api/requests', requireDatabase, requireStudentCourseFromQuery, asyncHandler(async (req, res) => {
   await ensureDb()
   const { courseId, meetingId } = req.query
   const result = await pool.query(
@@ -1405,6 +1700,11 @@ app.get('/api/requests', requireDatabase, asyncHandler(async (req, res) => {
 app.post('/api/requests', requireDatabase, upload.single('file'), asyncHandler(async (req, res) => {
   await ensureDb()
   const { courseId, meetingId } = req.body
+  if (!studentCanAccessCourse(req, courseId)) {
+    rejectStudentCourseAccess(res)
+    return
+  }
+
   const file = req.file
   const record = {
     id: `${meetingKey(courseId, meetingId)}:request:${createId()}`,
@@ -1446,7 +1746,7 @@ app.post('/api/requests', requireDatabase, upload.single('file'), asyncHandler(a
 app.get('/api/requests/:id/file', requireDatabase, asyncHandler(async (req, res) => {
   await ensureDb()
   const result = await pool.query(
-    'SELECT file_name, file_type, data FROM marathon_requests WHERE id = $1 AND data IS NOT NULL',
+    'SELECT course_id, file_name, file_type, data FROM marathon_requests WHERE id = $1 AND data IS NOT NULL',
     [req.params.id],
   )
 
@@ -1456,6 +1756,11 @@ app.get('/api/requests/:id/file', requireDatabase, asyncHandler(async (req, res)
   }
 
   const row = result.rows[0]
+  if (!studentCanAccessCourse(req, row.course_id)) {
+    rejectStudentCourseAccess(res)
+    return
+  }
+
   res.setHeader('Content-Type', row.file_type || 'application/octet-stream')
   res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(row.file_name)}"`)
   res.send(row.data)

@@ -24,6 +24,18 @@ export async function loadAppConfig() {
   return fetchJson('/api/config')
 }
 
+export async function loadCourses() {
+  try {
+    const data = await fetchJson('/api/courses')
+    return data.courses ?? []
+  } catch (error) {
+    if (!import.meta.env.DEV) throw error
+
+    const localData = await import('./data')
+    return localData.courses ?? []
+  }
+}
+
 export async function logoutStudent() {
   const response = await fetch(apiUrl('/api/student-auth/logout'), {
     method: 'POST',
@@ -40,11 +52,11 @@ export async function listStudents() {
   return data.students ?? []
 }
 
-export async function createStudent({ phone, name, password }) {
+export async function createStudent({ phone, name, courseIds, password }) {
   return fetchJson('/api/students', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ phone, name, password }),
+    body: JSON.stringify({ phone, name, courseIds, password }),
   })
 }
 

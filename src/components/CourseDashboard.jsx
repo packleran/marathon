@@ -4,9 +4,8 @@ import MeetingsSection from './MeetingsSection'
 import RecordingsSection from './RecordingsSection'
 import Sidebar from './Sidebar'
 import StudentAccessPanel from './StudentAccessPanel'
-import { courses } from '../data'
 import { getCourseTheme } from '../theme'
-import { loadAppConfig, logoutStudent } from '../studentAccess'
+import { loadAppConfig, loadCourses, logoutStudent } from '../studentAccess'
 import { duplicateCourseMaterials } from '../uploadedMaterials'
 import {
   addCustomCourseOverride,
@@ -437,7 +436,8 @@ function CourseEditor({
 }
 
 export default function CourseDashboard() {
-  const [activeCourseId, setActiveCourseId] = useState(courses[0].id)
+  const [baseCourses, setBaseCourses] = useState([])
+  const [activeCourseId, setActiveCourseId] = useState('')
   const [activeContent, setActiveContent] = useState('meetings')
   const [contentOverrides, setContentOverrides] = useState(loadContentOverrides)
   const [isAdminMode, setIsAdminMode] = useState(getInitialAdminMode)
@@ -445,15 +445,34 @@ export default function CourseDashboard() {
   const [contentSyncStatus, setContentSyncStatus] = useState(null)
   const [remoteRefreshToken, setRemoteRefreshToken] = useState(0)
   const [studentSession, setStudentSession] = useState(null)
+  const [appConfig, setAppConfig] = useState(null)
+  const [isAppConfigLoading, setIsAppConfigLoading] = useState(true)
+  const [isCoursesLoading, setIsCoursesLoading] = useState(true)
+  const [courseLoadError, setCourseLoadError] = useState('')
   const contentOverridesRef = useRef(contentOverrides)
 
   const editableCourses = useMemo(
-    () => applyContentOverrides(courses, contentOverrides),
-    [contentOverrides],
+    () => applyContentOverrides(baseCourses, contentOverrides),
+    [baseCourses, contentOverrides],
   )
-  const visibleCourses = editableCourses.length > 0 ? editableCourses : courses
-  const course = visibleCourses.find((c) => c.id === activeCourseId) ?? visibleCourses[0]
-  const isCourseLocked = Boolean(course.locked)
+  const allVisibleCourses = editableCourses.length > 0 ? editableCourses : baseCourses
+  const shouldFilterCourses = !IS_ADMIN_DEPLOYMENT && appConfig?.studentAuthRequired !== false
+  const assignedCourseIds = new Set(
+    Array.isArray(studentSession?.courseIds) ? studentSession.courseIds.map(String) : [],
+  )
+  const publicCourseIds = new Set(
+    Array.isArray(appConfig?.publicCourseIds) ? appConfig.publicCourseIds.map(String) : [],
+  )
+  const visibleCourses = shouldFilterCourses
+    ? allVisibleCourses.filter((candidate) => (
+      publicCourseIds.has(String(candidate.id)) || assignedCourseIds.has(String(candidate.id))
+    ))
+    : allVisibleCourses
+  const effectiveActiveCourseId = visibleCourses.some((candidate) => candidate.id === activeCourseId)
+    ? activeCourseId
+    : visibleCourses[0]?.id
+  const course = visibleCourses.find((c) => c.id === effectiveActiveCourseId) ?? visibleCourses[0]
+  const isCourseLocked = Boolean(course?.locked)
   const canEditContent = IS_ADMIN_DEPLOYMENT && isAdminMode && !isCourseLocked
 
   useEffect(() => {
@@ -461,16 +480,32 @@ export default function CourseDashboard() {
   }, [contentOverrides])
 
   useEffect(() => {
-    if (IS_ADMIN_DEPLOYMENT) return
-
     let ignore = false
 
-    loadAppConfig()
-      .then((config) => {
-        if (!ignore) setStudentSession(config.student ?? null)
+    Promise.all([
+      loadCourses(),
+      loadAppConfig().catch(() => ({ studentAuthRequired: false, publicCourseIds: [], student: null })),
+    ])
+      .then(([loadedCourses, config]) => {
+        if (!ignore) {
+          setBaseCourses(loadedCourses)
+          setAppConfig(config)
+          setStudentSession(config.student ?? null)
+          setCourseLoadError('')
+        }
       })
       .catch(() => {
-        if (!ignore) setStudentSession(null)
+        if (!ignore) {
+          setAppConfig({ studentAuthRequired: false })
+          setStudentSession(null)
+          setCourseLoadError('לא ניתן לטעון את רשימת הקורסים')
+        }
+      })
+      .finally(() => {
+        if (!ignore) {
+          setIsAppConfigLoading(false)
+          setIsCoursesLoading(false)
+        }
       })
 
     return () => {
@@ -678,6 +713,40 @@ export default function CourseDashboard() {
     setFocusedMeetingId(duplicatedMeeting.id)
   }
 
+  if (isCoursesLoading || isAppConfigLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center px-5">
+        <div className="rounded-2xl border border-border bg-white px-6 py-5 text-sm font-semibold text-text shadow-sm">
+          טוען את הקורסים...
+        </div>
+      </div>
+    )
+  }
+
+  if (courseLoadError) {
+    return (
+      <div className="flex min-h-screen items-center justify-center px-5">
+        <div className="max-w-md rounded-2xl border border-border bg-white px-6 py-5 text-center shadow-sm">
+          <h1 className="text-base font-semibold text-text">לא ניתן לטעון קורסים</h1>
+          <p className="mt-2 text-sm leading-6 text-text-muted">{courseLoadError}</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!course) {
+    return (
+      <div className="flex min-h-screen items-center justify-center px-5">
+        <div className="max-w-md rounded-2xl border border-border bg-white px-6 py-5 text-center shadow-sm">
+          <h1 className="text-base font-semibold text-text">לא משויך קורס למשתמש הזה</h1>
+          <p className="mt-2 text-sm leading-6 text-text-muted">
+            פנה לאדמין כדי לשייך את המשתמש לקורס המתאים.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen">
       <Header course={course} />
@@ -695,12 +764,14 @@ export default function CourseDashboard() {
       )}
 
       <main className="mx-auto max-w-7xl px-5 py-7 md:px-8">
-        {IS_ADMIN_DEPLOYMENT && isAdminMode && <StudentAccessPanel />}
+        {IS_ADMIN_DEPLOYMENT && isAdminMode && (
+          <StudentAccessPanel courses={visibleCourses} publicCourseIds={[...publicCourseIds]} />
+        )}
 
         <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-1 overflow-x-auto rounded-[14px] border border-border bg-surface p-1 shadow-sm">
             {visibleCourses.map((c) => {
-              const isActive = activeCourseId === c.id
+              const isActive = effectiveActiveCourseId === c.id
               const accent = getCourseTheme(c.color)
               return (
                 <button
