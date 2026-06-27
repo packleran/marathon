@@ -1372,6 +1372,14 @@ app.post('/api/student-auth/phone-login', requireDatabase, asyncHandler(async (r
     return
   }
 
+  if (courseIds.length > 1) {
+    clearStudentPhoneAccessCookie(req, res)
+    res.status(409).json({
+      error: 'הטלפון מופיע ביותר מקבוצת מודלים אחת. צריך להסיר כפילות באדמין לפני כניסה.',
+    })
+    return
+  }
+
   const expiresAt = Date.now() + studentSessionDays * 24 * 60 * 60 * 1000
   const phoneAccess = {
     type: 'phone',

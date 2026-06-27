@@ -37,6 +37,11 @@ const contentTabs = [
 ]
 
 const phoneLoginRootCourseIds = new Set(['computational'])
+const loginCourseOptions = [
+  { id: 'computational', label: 'מודלים חישוביים', mode: 'phone' },
+  { id: 'probability', label: 'הסתברות', mode: 'password' },
+  { id: 'algorithms', label: 'אלגוריתמים', mode: 'password' },
+]
 
 function toDatetimeLocal(value) {
   return value ? value.slice(0, 16) : ''
@@ -254,14 +259,30 @@ function StudentAccountBar({ student, onLogout }) {
   )
 }
 
-function PhoneAccessPanel() {
+function isPhoneLoginCourseId(courseId, phoneLoginCourseIds = new Set()) {
+  const normalizedCourseId = String(courseId ?? '')
+  if (phoneLoginCourseIds.has(normalizedCourseId)) return true
+
+  return [...phoneLoginCourseIds].some((rootId) => normalizedCourseId.startsWith(`${rootId}-group-`))
+}
+
+function StudentEntryPanel({ phoneLoginCourseIds }) {
+  const [selectedCourseId, setSelectedCourseId] = useState(loginCourseOptions[0].id)
   const [phone, setPhone] = useState('')
   const [status, setStatus] = useState(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const selectedCourse = loginCourseOptions.find((option) => option.id === selectedCourseId) ?? loginCourseOptions[0]
+  const canUsePhoneLogin = selectedCourse.mode === 'phone' && isPhoneLoginCourseId(selectedCourse.id, phoneLoginCourseIds)
 
   async function handleSubmit(event) {
     event.preventDefault()
     setStatus(null)
+
+    if (!canUsePhoneLogin) {
+      window.location.assign('/student-login')
+      return
+    }
+
     setIsSubmitting(true)
 
     try {
@@ -278,35 +299,57 @@ function PhoneAccessPanel() {
       <form
         noValidate
         onSubmit={handleSubmit}
-        className="w-full max-w-sm rounded-2xl border border-border bg-white p-6 text-right shadow-[0_12px_32px_rgba(20,23,38,0.08)]"
+        className="w-full max-w-md rounded-2xl border border-border bg-white p-6 text-right shadow-[0_12px_32px_rgba(20,23,38,0.08)]"
       >
-        <h1 className="text-xl font-semibold text-text">כניסה למודלים חישוביים</h1>
-        <label className="mt-5 block text-xs font-semibold uppercase tracking-wider text-text-muted">
-          טלפון
-          <input
-            value={phone}
-            onChange={(event) => setPhone(event.target.value)}
-            inputMode="tel"
-            autoComplete="tel"
-            autoFocus
-            placeholder="0521234567"
-            className="mt-1.5 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm font-normal text-text outline-none focus:border-primary focus:ring-2 focus:ring-primary-soft"
-            required
-          />
-        </label>
+        <h1 className="text-xl font-semibold text-text">כניסה לאתר הסטודנטים</h1>
+        <div className="mt-5 grid grid-cols-3 gap-1 rounded-xl border border-border bg-inset p-1">
+          {loginCourseOptions.map((option) => {
+            const isSelected = option.id === selectedCourse.id
+            return (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => {
+                  setSelectedCourseId(option.id)
+                  setStatus(null)
+                }}
+                className={`rounded-lg px-2 py-2 text-xs font-semibold transition-colors cursor-pointer ${
+                  isSelected
+                    ? 'bg-white text-primary shadow-sm'
+                    : 'text-text-muted hover:bg-white hover:text-text'
+                }`}
+              >
+                {option.label}
+              </button>
+            )
+          })}
+        </div>
+        {canUsePhoneLogin ? (
+          <label className="mt-5 block text-xs font-semibold uppercase tracking-wider text-text-muted">
+            טלפון
+            <input
+              value={phone}
+              onChange={(event) => setPhone(event.target.value)}
+              inputMode="tel"
+              autoComplete="tel"
+              autoFocus
+              placeholder="0521234567"
+              className="mt-1.5 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm font-normal text-text outline-none focus:border-primary focus:ring-2 focus:ring-primary-soft"
+              required
+            />
+          </label>
+        ) : (
+          <div className="mt-5 rounded-xl border border-border-subtle bg-inset px-4 py-3 text-sm text-text-2">
+            הכניסה לקורס הזה מתבצעת עם טלפון וסיסמה.
+          </div>
+        )}
         <button
           type="submit"
-          disabled={isSubmitting || !phone.trim()}
+          disabled={isSubmitting || (canUsePhoneLogin && !phone.trim())}
           className="mt-5 w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
         >
-          כניסה
+          {canUsePhoneLogin ? 'כניסה' : 'המשך לכניסה עם סיסמה'}
         </button>
-        <a
-          href="/student-login"
-          className="mt-3 block text-center text-xs font-medium text-text-muted transition-colors hover:text-primary"
-        >
-          כניסה לקורס עם סיסמה
-        </a>
         {status && (
           <div className="mt-4 text-sm text-danger" role="alert">
             {status.text}
@@ -842,7 +885,7 @@ export default function CourseDashboard() {
   }
 
   if (!IS_ADMIN_DEPLOYMENT && !studentSession && phoneLoginCourseIds.size > 0) {
-    return <PhoneAccessPanel />
+    return <StudentEntryPanel phoneLoginCourseIds={phoneLoginCourseIds} />
   }
 
   if (!course) {
