@@ -321,6 +321,13 @@ function requestUserAgent(req) {
   return String(req.headers['user-agent'] ?? '').slice(0, 500)
 }
 
+function maskPhoneForLog(phone) {
+  const normalizedPhone = normalizePhone(phone)
+  if (!normalizedPhone) return ''
+
+  return `***${normalizedPhone.slice(-4)}`
+}
+
 function serializeStudent(row) {
   const courseIds = normalizeCourseIds(row.course_ids ?? [])
 
@@ -749,7 +756,7 @@ function sendStudentLoginPage(req, res, redirectPath = null) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               phone: formData.get('phone'),
-              password: formData.get('password')
+              password: String(formData.get('password') || '').trim()
             })
           });
 
@@ -1201,9 +1208,15 @@ app.post('/api/student-auth/login', requireDatabase, asyncHandler(async (req, re
 
   await ensureDb()
   const phone = normalizePhone(req.body?.phone)
-  const password = String(req.body?.password ?? '')
+  const password = String(req.body?.password ?? '').trim()
+  const maskedPhone = maskPhoneForLog(phone)
 
   if (!isValidPhone(phone) || !password) {
+    console.warn('[student-auth/login] rejected', {
+      phone: maskedPhone,
+      reason: 'invalid_input',
+      hasPassword: Boolean(password),
+    })
     res.status(400).json({ error: 'יש להזין טלפון וסיסמה תקינים' })
     return
   }
@@ -1220,6 +1233,10 @@ app.post('/api/student-auth/login', requireDatabase, asyncHandler(async (req, re
   )
 
   if (result.rowCount === 0 || !result.rows[0].active) {
+    console.warn('[student-auth/login] rejected', {
+      phone: maskedPhone,
+      reason: result.rowCount === 0 ? 'student_not_found' : 'student_inactive',
+    })
     res.status(401).json({ error: 'טלפון או סיסמה שגויים' })
     return
   }
@@ -1227,6 +1244,11 @@ app.post('/api/student-auth/login', requireDatabase, asyncHandler(async (req, re
   const studentRow = result.rows[0]
   const isPasswordValid = await verifyPassword(password, studentRow.password_hash)
   if (!isPasswordValid) {
+    console.warn('[student-auth/login] rejected', {
+      phone: maskedPhone,
+      reason: 'password_mismatch',
+      courseIds: normalizeCourseIds(studentRow.course_ids),
+    })
     res.status(401).json({ error: 'טלפון או סיסמה שגויים' })
     return
   }
@@ -1260,6 +1282,11 @@ app.post('/api/student-auth/login', requireDatabase, asyncHandler(async (req, re
 
       if (activeSessions.rowCount > 0) {
         await client.query('ROLLBACK')
+        console.warn('[student-auth/login] rejected', {
+          phone: maskedPhone,
+          reason: 'active_session_exists',
+          courseIds: normalizeCourseIds(studentRow.course_ids),
+        })
         res.status(409).json({
           error: 'המשתמש כבר מחובר ממכשיר אחר. צריך לצאת מהמכשיר הקודם או לבקש מהאדמין לנתק חיבורים פעילים.',
         })
@@ -1298,6 +1325,10 @@ app.post('/api/student-auth/login', requireDatabase, asyncHandler(async (req, re
 
     clearStudentPhoneAccessCookie(req, res)
     setStudentSessionCookie(req, res, token, expiresAt)
+    console.info('[student-auth/login] accepted', {
+      phone: maskedPhone,
+      courseIds: normalizeCourseIds(updatedStudent.rows[0].course_ids),
+    })
     res.json({ student: serializeStudent(updatedStudent.rows[0]) })
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {})
@@ -1431,18 +1462,22 @@ app.post('/api/students', requireDatabase, requireAdmin, asyncHandler(async (req
   const courseIds = normalizeCourseIds(req.body?.courseIds)
   const requestedPassword = String(req.body?.password ?? '').trim()
   const password = requestedPassword || generatePassword()
+  const maskedPhone = maskPhoneForLog(phone)
 
   if (!isValidPhone(phone)) {
+    console.warn('[students/create] rejected', { phone: maskedPhone, reason: 'invalid_phone' })
     res.status(400).json({ error: 'Invalid phone number' })
     return
   }
 
   if (password.length < 8) {
+    console.warn('[students/create] rejected', { phone: maskedPhone, reason: 'short_password' })
     res.status(400).json({ error: 'Password must be at least 8 characters' })
     return
   }
 
   if (courseIds.length === 0) {
+    console.warn('[students/create] rejected', { phone: maskedPhone, reason: 'missing_course' })
     res.status(400).json({ error: 'Student must be assigned to a course' })
     return
   }
@@ -1484,6 +1519,12 @@ app.post('/api/students', requireDatabase, requireAdmin, asyncHandler(async (req
 
     const student = result.rows[0]
     const whatsApp = await sendCredentialsWhatsApp({ student, password })
+
+    console.info('[students/create] saved', {
+      phone: maskedPhone,
+      courseIds: normalizeCourseIds(student.course_ids),
+      active: Boolean(student.active),
+    })
 
     res.status(201).json({ student: serializeStudent(student), password, whatsApp })
   } catch (error) {
