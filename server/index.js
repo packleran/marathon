@@ -1,7 +1,7 @@
 import express from 'express'
 import multer from 'multer'
 import path from 'node:path'
-import { createHash, randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto'
+import { createHash, createHmac, randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import pg from 'pg'
@@ -28,6 +28,7 @@ const adminPassword = process.env.ADMIN_PASSWORD ?? ''
 const databaseUrl = process.env.DATABASE_URL
 const studentSessionCookie = 'marathon_student_session'
 const studentDeviceCookie = 'marathon_student_device'
+const studentPhoneAccessCookie = 'marathon_phone_access'
 const studentDeviceCookieMaxAge = 400 * 24 * 60 * 60
 const configuredStudentSessionDays = Number(process.env.STUDENT_SESSION_DAYS ?? 30)
 const studentSessionDays = Number.isFinite(configuredStudentSessionDays)
@@ -36,8 +37,17 @@ const studentSessionDays = Number.isFinite(configuredStudentSessionDays)
 const disabledAuthValues = new Set(['0', 'false', 'no', 'off'])
 const studentSingleSession = !disabledAuthValues.has(String(process.env.STUDENT_SINGLE_SESSION ?? 'true').toLowerCase())
 const studentDeviceLock = !disabledAuthValues.has(String(process.env.STUDENT_DEVICE_LOCK ?? 'true').toLowerCase())
-const studentPublicCourseIds = normalizeCourseIds(process.env.STUDENT_PUBLIC_COURSE_IDS ?? 'computational')
-const studentPublicCourseIdSet = new Set(studentPublicCourseIds)
+const studentPhoneLoginCourseIds = normalizeCourseIds(
+  process.env.STUDENT_PHONE_LOGIN_COURSE_IDS ?? process.env.STUDENT_PUBLIC_COURSE_IDS ?? 'computational',
+)
+const studentPhoneLoginCourseIdSet = new Set(studentPhoneLoginCourseIds)
+const studentPhoneAccessSecret = String(
+  process.env.STUDENT_PHONE_ACCESS_SECRET ??
+  process.env.STUDENT_AUTH_SECRET ??
+  adminPassword ??
+  databaseUrl ??
+  'marathon-phone-access-local-dev',
+)
 const whatsAppCredentialsEnabled = !disabledAuthValues.has(String(process.env.WHATSAPP_SEND_CREDENTIALS ?? 'true').toLowerCase())
 const whatsAppGraphApiVersion = process.env.WHATSAPP_GRAPH_API_VERSION ?? 'v25.0'
 const whatsAppPhoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID ?? ''
@@ -73,11 +83,11 @@ function isStudentDeviceLockRequired() {
 }
 
 function isStudentDeviceLockRequiredForCourseIds(courseIds) {
-  return isStudentDeviceLockRequired() && !hasOnlyPublicCourses(courseIds)
+  return isStudentDeviceLockRequired() && !hasOnlyPhoneLoginCourses(courseIds)
 }
 
 function isStudentSingleSessionRequiredForCourseIds(courseIds) {
-  return isStudentSingleSessionRequired() && !hasOnlyPublicCourses(courseIds)
+  return isStudentSingleSessionRequired() && !hasOnlyPhoneLoginCourses(courseIds)
 }
 
 function isWhatsAppConfigured() {
@@ -104,13 +114,34 @@ function normalizeCourseIds(value) {
     .filter(Boolean))]
 }
 
-function isPublicCourseId(courseId) {
-  return studentPublicCourseIdSet.has(String(courseId ?? '').trim())
+function normalizePhoneList(value) {
+  const values = Array.isArray(value)
+    ? value
+    : String(value ?? '').split(/[\s,;]+/)
+
+  return [...new Set(values
+    .map((item) => normalizePhone(item))
+    .filter((phone) => isValidPhone(phone)))]
 }
 
-function hasOnlyPublicCourses(courseIds) {
+function rootCourseId(course) {
+  return String(course?.sourceCourseId ?? course?.id ?? '').trim()
+}
+
+function isPhoneLoginCourseId(courseId) {
+  const normalizedCourseId = String(courseId ?? '').trim()
+  if (studentPhoneLoginCourseIdSet.has(normalizedCourseId)) return true
+
+  return studentPhoneLoginCourseIds.some((rootId) => normalizedCourseId.startsWith(`${rootId}-group-`))
+}
+
+function isPhoneLoginCourse(course) {
+  return isPhoneLoginCourseId(rootCourseId(course))
+}
+
+function hasOnlyPhoneLoginCourses(courseIds) {
   const normalizedCourseIds = normalizeCourseIds(courseIds)
-  return normalizedCourseIds.length > 0 && normalizedCourseIds.every((courseId) => isPublicCourseId(courseId))
+  return normalizedCourseIds.length > 0 && normalizedCourseIds.every((courseId) => isPhoneLoginCourseId(courseId))
 }
 
 function toWhatsAppPhoneNumber(value) {
@@ -161,6 +192,46 @@ function hashSessionToken(token) {
 
 function hashDeviceToken(token) {
   return createHash('sha256').update(token).digest('hex')
+}
+
+function signValue(value) {
+  return createHmac('sha256', studentPhoneAccessSecret).update(value).digest('base64url')
+}
+
+function safeEqualString(left, right) {
+  const leftBuffer = Buffer.from(String(left ?? ''))
+  const rightBuffer = Buffer.from(String(right ?? ''))
+  return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer)
+}
+
+function createSignedPhoneAccessToken(phoneAccess) {
+  const payload = Buffer.from(JSON.stringify(phoneAccess)).toString('base64url')
+  return `${payload}.${signValue(payload)}`
+}
+
+function verifySignedPhoneAccessToken(token) {
+  const [payload, signature] = String(token ?? '').split('.')
+  if (!payload || !signature || !safeEqualString(signValue(payload), signature)) return null
+
+  try {
+    const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'))
+    if (!parsed || typeof parsed !== 'object') return null
+    if (Number(parsed.expiresAt) <= Date.now()) return null
+
+    const phone = normalizePhone(parsed.phone)
+    const courseIds = normalizeCourseIds(parsed.courseIds)
+    if (!isValidPhone(phone) || courseIds.length === 0) return null
+
+    return {
+      type: 'phone',
+      phone,
+      name: '',
+      courseIds,
+      expiresAt: Number(parsed.expiresAt),
+    }
+  } catch {
+    return null
+  }
 }
 
 function parseCookies(req) {
@@ -231,6 +302,22 @@ function clearStudentSessionCookie(req, res) {
   }))
 }
 
+function setStudentPhoneAccessCookie(req, res, phoneAccess) {
+  appendSetCookie(res, serializeCookie(studentPhoneAccessCookie, createSignedPhoneAccessToken(phoneAccess), {
+    expires: new Date(phoneAccess.expiresAt),
+    maxAge: Math.max(0, Math.floor((phoneAccess.expiresAt - Date.now()) / 1000)),
+    secure: shouldUseSecureCookie(req),
+  }))
+}
+
+function clearStudentPhoneAccessCookie(req, res) {
+  appendSetCookie(res, serializeCookie(studentPhoneAccessCookie, '', {
+    expires: new Date(0),
+    maxAge: 0,
+    secure: shouldUseSecureCookie(req),
+  }))
+}
+
 function setStudentDeviceCookie(req, res, token) {
   appendSetCookie(res, serializeCookie(studentDeviceCookie, token, {
     expires: new Date(Date.now() + studentDeviceCookieMaxAge * 1000),
@@ -263,7 +350,8 @@ function serializeStudent(row) {
     name: row.name,
     active: row.active,
     courseIds,
-    publicAccessOnly: hasOnlyPublicCourses(courseIds),
+    phoneLoginOnly: hasOnlyPhoneLoginCourses(courseIds),
+    publicAccessOnly: hasOnlyPhoneLoginCourses(courseIds),
     activeSessionCount: Number(row.active_session_count ?? 0),
     lockedDevice: Boolean(row.locked_device_id),
     lockedDeviceAt: toIso(row.locked_device_at),
@@ -360,8 +448,9 @@ function shouldEnforceStudentCourseAccess() {
 }
 
 function getAccessibleCourseIdsForRequest(req) {
-  const allowedCourseIds = new Set(studentPublicCourseIds)
+  const allowedCourseIds = new Set()
   normalizeCourseIds(req.student?.courseIds).forEach((courseId) => allowedCourseIds.add(courseId))
+  normalizeCourseIds(req.phoneAccess?.courseIds).forEach((courseId) => allowedCourseIds.add(courseId))
 
   return [...allowedCourseIds]
 }
@@ -386,6 +475,23 @@ function requireStudentCourseFromQuery(req, res, next) {
   next()
 }
 
+function sanitizeCourseForStudent(course) {
+  if (!course || typeof course !== 'object') return course
+
+  const safeCourse = { ...course }
+  delete safeCourse.approvedPhones
+  return safeCourse
+}
+
+function sanitizeCourseOverrideForStudent(courseOverride) {
+  if (!courseOverride || typeof courseOverride !== 'object') return courseOverride
+
+  return {
+    ...courseOverride,
+    course: sanitizeCourseForStudent(courseOverride.course ?? {}),
+  }
+}
+
 function filterContentOverridesForCourses(overrides, courseIds) {
   const allowedCourseIds = new Set(normalizeCourseIds(courseIds))
   if (allowedCourseIds.size === 0) return {}
@@ -395,7 +501,9 @@ function filterContentOverridesForCourses(overrides, courseIds) {
   Object.entries(overrides ?? {}).forEach(([key, value]) => {
     if (key === 'customCourses') {
       const customCourses = Array.isArray(value)
-        ? value.filter((course) => allowedCourseIds.has(String(course.id)))
+        ? value
+            .filter((course) => allowedCourseIds.has(String(course.id)))
+            .map((course) => sanitizeCourseForStudent(course))
         : []
       if (customCourses.length > 0) filtered.customCourses = customCourses
       return
@@ -410,11 +518,41 @@ function filterContentOverridesForCourses(overrides, courseIds) {
     }
 
     if (allowedCourseIds.has(String(key))) {
-      filtered[key] = value
+      filtered[key] = sanitizeCourseOverrideForStudent(value)
     }
   })
 
   return filtered
+}
+
+function applyServerCourseOverrides(courseList, overrides) {
+  const customCourses = Array.isArray(overrides?.customCourses) ? overrides.customCourses : []
+  const deletedCourseIds = new Set((overrides?.deletedCourseIds ?? []).map(String))
+
+  return [...courseList, ...customCourses]
+    .filter((course) => !deletedCourseIds.has(String(course.id)))
+    .map((course) => ({
+      ...course,
+      ...(overrides?.[course.id]?.course ?? {}),
+    }))
+}
+
+function getPhoneLoginCourseIdsForPhone(phone, overrides) {
+  const normalizedPhone = normalizePhone(phone)
+  if (!isValidPhone(normalizedPhone)) return []
+
+  return applyServerCourseOverrides(courses, overrides)
+    .filter((course) => isPhoneLoginCourse(course))
+    .filter((course) => normalizePhoneList(course.approvedPhones).includes(normalizedPhone))
+    .map((course) => String(course.id))
+}
+
+async function loadContentOverridesFromDatabase() {
+  if (!pool) return {}
+
+  await ensureDb()
+  const result = await pool.query('SELECT overrides FROM marathon_content WHERE id = $1', ['default'])
+  return result.rows[0]?.overrides ?? {}
 }
 
 function filterCoursesForIds(courseList, courseIds) {
@@ -424,23 +562,20 @@ function filterCoursesForIds(courseList, courseIds) {
   return courseList.filter((course) => allowedCourseIds.has(String(course.id)))
 }
 
-function getCoursesForRequest(req) {
-  if (!shouldEnforceStudentCourseAccess()) return courses
+function getCoursesForRequest(req, courseList = courses) {
+  if (!shouldEnforceStudentCourseAccess()) return courseList
 
-  return filterCoursesForIds(courses, getAccessibleCourseIdsForRequest(req))
+  return filterCoursesForIds(courseList, getAccessibleCourseIdsForRequest(req))
 }
 
 function isPublicStudentApiRequest(req) {
   if (!req.path.startsWith('/api/')) return false
 
   return (
-    req.path === '/api/content' ||
-    req.path === '/api/content/events' ||
-    req.path === '/api/materials' ||
-    req.path.startsWith('/api/materials/') ||
-    req.path === '/api/deleted-materials' ||
-    req.path === '/api/requests' ||
-    req.path.startsWith('/api/requests/')
+    req.path === '/api/config' ||
+    req.path === '/api/courses' ||
+    req.path === '/api/student-auth/phone-login' ||
+    req.path === '/api/student-auth/logout'
   )
 }
 
@@ -455,7 +590,7 @@ function isPublicStudentAppShellRequest(req) {
 function canServeAnonymousStudentRequest(req) {
   return (
     shouldEnforceStudentCourseAccess() &&
-    studentPublicCourseIds.length > 0 &&
+    studentPhoneLoginCourseIds.length > 0 &&
     (isPublicStudentApiRequest(req) || isPublicStudentAppShellRequest(req))
   )
 }
@@ -464,10 +599,10 @@ function htmlJson(value) {
   return JSON.stringify(value).replace(/</g, '\\u003c')
 }
 
-function sendStudentLoginPage(req, res) {
-  const nextPath = req.originalUrl.startsWith('/') && !req.originalUrl.startsWith('//')
+function sendStudentLoginPage(req, res, redirectPath = null) {
+  const nextPath = redirectPath ?? (req.originalUrl.startsWith('/') && !req.originalUrl.startsWith('//')
     ? req.originalUrl
-    : '/'
+    : '/')
 
   res.setHeader('Content-Type', 'text/html; charset=utf-8')
   res.setHeader('Cache-Control', 'no-store')
@@ -715,6 +850,12 @@ async function getAuthenticatedStudent(req) {
   return serializeStudent(studentRow)
 }
 
+function getAuthenticatedPhoneAccess(req) {
+  if (!shouldEnforceStudentCourseAccess()) return null
+
+  return verifySignedPhoneAccessToken(parseCookies(req)[studentPhoneAccessCookie])
+}
+
 async function requireStudentAuth(req, res, next) {
   if (!isStudentAuthRequired()) {
     next()
@@ -725,6 +866,18 @@ async function requireStudentAuth(req, res, next) {
   if (student) {
     req.student = student
     next()
+    return
+  }
+
+  const phoneAccess = getAuthenticatedPhoneAccess(req)
+  if (phoneAccess) {
+    req.phoneAccess = phoneAccess
+    if (req.path.startsWith('/api/') || isPublicStudentAppShellRequest(req)) {
+      next()
+      return
+    }
+
+    res.status(401).send('Authentication required')
     return
   }
 
@@ -996,15 +1149,27 @@ app.get('/api/health', (_req, res) => {
 app.use(requireBasicAuth)
 app.use(express.json({ limit: '5mb' }))
 
+app.get('/student-login', (req, res) => {
+  if (!isStudentAuthRequired()) {
+    res.redirect('/')
+    return
+  }
+
+  sendStudentLoginPage(req, res, '/')
+})
+
 app.get('/api/config', asyncHandler(async (req, res) => {
   const student = await getAuthenticatedStudent(req)
+  const phoneAccess = student ? null : getAuthenticatedPhoneAccess(req)
 
   res.json({
     role: isAdminService ? 'admin' : 'student',
     canEditContent: isAdminService,
     hasDatabase: Boolean(pool),
     studentAuthRequired: isStudentAuthRequired(),
-    publicCourseIds: studentPublicCourseIds,
+    phoneLoginCourseIds: studentPhoneLoginCourseIds,
+    publicCourseIds: [],
+    phoneAccess,
     student,
   })
 }))
@@ -1012,10 +1177,21 @@ app.get('/api/config', asyncHandler(async (req, res) => {
 app.get('/api/courses', asyncHandler(async (req, res) => {
   const student = await getAuthenticatedStudent(req)
   if (student) req.student = student
+  if (!student) {
+    const phoneAccess = getAuthenticatedPhoneAccess(req)
+    if (phoneAccess) req.phoneAccess = phoneAccess
+  }
+
+  const courseList = shouldEnforceStudentCourseAccess()
+    ? applyServerCourseOverrides(courses, await loadContentOverridesFromDatabase())
+    : courses
 
   res.json({
-    courses: getCoursesForRequest(req),
-    publicCourseIds: studentPublicCourseIds,
+    courses: getCoursesForRequest(req, courseList).map((course) => (
+      shouldEnforceStudentCourseAccess() ? sanitizeCourseForStudent(course) : course
+    )),
+    phoneLoginCourseIds: studentPhoneLoginCourseIds,
+    publicCourseIds: [],
   })
 }))
 
@@ -1171,8 +1347,43 @@ app.post('/api/student-auth/login', requireDatabase, asyncHandler(async (req, re
   if (shouldUseDeviceLock) {
     setStudentDeviceCookie(req, res, deviceToken)
   }
+  clearStudentPhoneAccessCookie(req, res)
   setStudentSessionCookie(req, res, token, expiresAt)
   res.json({ student: serializeStudent(updatedStudent.rows[0]) })
+}))
+
+app.post('/api/student-auth/phone-login', requireDatabase, asyncHandler(async (req, res) => {
+  if (!isStudentAuthRequired() || studentPhoneLoginCourseIds.length === 0) {
+    res.status(400).json({ error: 'Phone login is not enabled' })
+    return
+  }
+
+  const phone = normalizePhone(req.body?.phone)
+  if (!isValidPhone(phone)) {
+    res.status(400).json({ error: 'יש להזין מספר טלפון תקין' })
+    return
+  }
+
+  const overrides = await loadContentOverridesFromDatabase()
+  const courseIds = getPhoneLoginCourseIdsForPhone(phone, overrides)
+  if (courseIds.length === 0) {
+    clearStudentPhoneAccessCookie(req, res)
+    res.status(401).json({ error: 'הטלפון לא נמצא ברשימת המורשים לקורס מודלים חישוביים' })
+    return
+  }
+
+  const expiresAt = Date.now() + studentSessionDays * 24 * 60 * 60 * 1000
+  const phoneAccess = {
+    type: 'phone',
+    phone,
+    name: '',
+    courseIds,
+    expiresAt,
+  }
+
+  clearStudentSessionCookie(req, res)
+  setStudentPhoneAccessCookie(req, res, phoneAccess)
+  res.json({ phoneAccess })
 }))
 
 app.post('/api/student-auth/logout', asyncHandler(async (req, res) => {
@@ -1183,15 +1394,18 @@ app.post('/api/student-auth/logout', asyncHandler(async (req, res) => {
   }
 
   clearStudentSessionCookie(req, res)
+  clearStudentPhoneAccessCookie(req, res)
   res.status(204).end()
 }))
 
 app.get('/api/student-auth/me', asyncHandler(async (req, res) => {
   const student = await getAuthenticatedStudent(req)
+  const phoneAccess = student ? null : getAuthenticatedPhoneAccess(req)
 
   res.json({
-    authenticated: Boolean(student),
+    authenticated: Boolean(student || phoneAccess),
     student,
+    phoneAccess,
   })
 }))
 

@@ -163,8 +163,10 @@ export function createContentPolling(onChange) {
 export function applyContentOverrides(courses, overrides) {
   const customCourses = Array.isArray(overrides.customCourses) ? overrides.customCourses : []
   const deletedCourseIds = new Set((overrides.deletedCourseIds ?? []).map(String))
+  const baseCourseIds = new Set(courses.map((course) => String(course.id)))
+  const newCustomCourses = customCourses.filter((course) => !baseCourseIds.has(String(course.id)))
 
-  return [...courses, ...customCourses].filter((course) => !deletedCourseIds.has(String(course.id))).map((course) => {
+  return [...courses, ...newCustomCourses].filter((course) => !deletedCourseIds.has(String(course.id))).map((course) => {
     const courseOverride = overrides[course.id] ?? {}
     const meetingOverrides = courseOverride.meetings ?? {}
     const customMeetings = Array.isArray(courseOverride.customMeetings) ? courseOverride.customMeetings : []
@@ -190,6 +192,7 @@ export function createDuplicatedCourse(course) {
     sourceCourseId: course.sourceCourseId ?? course.id,
     name: `${course.name} - קבוצה נוספת`,
     locked: false,
+    approvedPhones: [],
   }
 }
 

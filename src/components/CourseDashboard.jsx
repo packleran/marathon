@@ -5,7 +5,7 @@ import RecordingsSection from './RecordingsSection'
 import Sidebar from './Sidebar'
 import StudentAccessPanel from './StudentAccessPanel'
 import { getCourseTheme } from '../theme'
-import { loadAppConfig, loadCourses, logoutStudent } from '../studentAccess'
+import { loadAppConfig, loadCourses, loginWithPhone, logoutStudent } from '../studentAccess'
 import { duplicateCourseMaterials } from '../uploadedMaterials'
 import {
   addCustomCourseOverride,
@@ -36,6 +36,8 @@ const contentTabs = [
   { key: 'recordings', label: 'הקלטות' },
 ]
 
+const phoneLoginRootCourseIds = new Set(['computational'])
+
 function toDatetimeLocal(value) {
   return value ? value.slice(0, 16) : ''
 }
@@ -51,6 +53,29 @@ function parseJsonArray(label, value) {
   }
 
   return parsed
+}
+
+function normalizePhone(value) {
+  const digits = String(value ?? '').replace(/\D/g, '')
+  if (digits.startsWith('972') && digits.length >= 11) return `0${digits.slice(3)}`
+
+  return digits
+}
+
+function normalizePhoneList(value) {
+  return [...new Set(String(value ?? '')
+    .split(/[\s,;]+/)
+    .map((item) => normalizePhone(item))
+    .filter((phone) => phone.length >= 8 && phone.length <= 15))]
+}
+
+function formatPhoneList(value) {
+  return (Array.isArray(value) ? value : []).join('\n')
+}
+
+function isPhoneLoginCourse(course) {
+  const rootCourseId = String(course?.sourceCourseId ?? course?.id ?? '')
+  return phoneLoginRootCourseIds.has(rootCourseId)
 }
 
 function clearModeQueryParams() {
@@ -229,6 +254,69 @@ function StudentAccountBar({ student, onLogout }) {
   )
 }
 
+function PhoneAccessPanel() {
+  const [phone, setPhone] = useState('')
+  const [status, setStatus] = useState(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  async function handleSubmit(event) {
+    event.preventDefault()
+    setStatus(null)
+    setIsSubmitting(true)
+
+    try {
+      await loginWithPhone(phone)
+      window.location.assign('/')
+    } catch (error) {
+      setStatus({ type: 'error', text: error.message })
+      setIsSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="flex min-h-screen items-center justify-center px-5">
+      <form
+        noValidate
+        onSubmit={handleSubmit}
+        className="w-full max-w-sm rounded-2xl border border-border bg-white p-6 text-right shadow-[0_12px_32px_rgba(20,23,38,0.08)]"
+      >
+        <h1 className="text-xl font-semibold text-text">כניסה למודלים חישוביים</h1>
+        <label className="mt-5 block text-xs font-semibold uppercase tracking-wider text-text-muted">
+          טלפון
+          <input
+            value={phone}
+            onChange={(event) => setPhone(event.target.value)}
+            inputMode="tel"
+            autoComplete="tel"
+            autoFocus
+            placeholder="0521234567"
+            className="mt-1.5 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm font-normal text-text outline-none focus:border-primary focus:ring-2 focus:ring-primary-soft"
+            required
+          />
+        </label>
+        <button
+          type="submit"
+          disabled={isSubmitting || !phone.trim()}
+          className="mt-5 w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+        >
+          כניסה
+        </button>
+        <a
+          href="/student-login"
+          className="mt-3 block text-center text-xs font-medium text-text-muted transition-colors hover:text-primary"
+        >
+          כניסה לקורס עם סיסמה
+        </a>
+        {status && (
+          <div className="mt-4 text-sm text-danger" role="alert">
+            {status.text}
+          </div>
+        )}
+      </form>
+    </div>
+  )
+}
+
 function CourseEditor({
   course,
   canDelete,
@@ -241,10 +329,12 @@ function CourseEditor({
   onSave,
   onUnlock,
 }) {
+  const isPhoneLoginGroup = isPhoneLoginCourse(course)
   const [form, setForm] = useState({
     name: course.name,
     subtitle: course.subtitle,
     nextSession: toDatetimeLocal(course.nextSession),
+    approvedPhones: formatPhoneList(course.approvedPhones),
     recordings: formatJson(course.recordings),
     deadlines: formatJson(course.deadlines),
     resources: formatJson(course.resources),
@@ -276,6 +366,7 @@ function CourseEditor({
       name: form.name.trim(),
       subtitle: form.subtitle.trim(),
       nextSession: form.nextSession,
+      ...(isPhoneLoginGroup ? { approvedPhones: normalizePhoneList(form.approvedPhones) } : {}),
       recordings,
       deadlines,
       resources,
@@ -333,6 +424,19 @@ function CourseEditor({
             />
           </label>
         </div>
+        {isPhoneLoginGroup && (
+          <label className="mt-4 block text-xs font-semibold text-text-muted uppercase tracking-wider">
+            טלפונים מאושרים
+            <textarea
+              dir="ltr"
+              value={form.approvedPhones}
+              onChange={(event) => updateField('approvedPhones', event.target.value)}
+              rows={6}
+              placeholder={'0521234567\n0527654321'}
+              className="mt-1.5 w-full resize-y rounded-xl border border-border bg-white px-3 py-2 text-xs font-mono font-normal leading-relaxed text-text outline-none focus:border-primary focus:ring-2 focus:ring-primary-soft"
+            />
+          </label>
+        )}
         <details className="mt-4 rounded-xl border border-border-subtle bg-white p-4">
           <summary className="cursor-pointer text-xs font-semibold text-text-muted">
             עריכה מתקדמת: הקלטות, תאריכים וקישורים
@@ -460,13 +564,11 @@ export default function CourseDashboard() {
   const assignedCourseIds = new Set(
     Array.isArray(studentSession?.courseIds) ? studentSession.courseIds.map(String) : [],
   )
-  const publicCourseIds = new Set(
-    Array.isArray(appConfig?.publicCourseIds) ? appConfig.publicCourseIds.map(String) : [],
+  const phoneLoginCourseIds = new Set(
+    Array.isArray(appConfig?.phoneLoginCourseIds) ? appConfig.phoneLoginCourseIds.map(String) : [],
   )
   const visibleCourses = shouldFilterCourses
-    ? allVisibleCourses.filter((candidate) => (
-      publicCourseIds.has(String(candidate.id)) || assignedCourseIds.has(String(candidate.id))
-    ))
+    ? allVisibleCourses.filter((candidate) => assignedCourseIds.has(String(candidate.id)))
     : allVisibleCourses
   const effectiveActiveCourseId = visibleCourses.some((candidate) => candidate.id === activeCourseId)
     ? activeCourseId
@@ -484,13 +586,18 @@ export default function CourseDashboard() {
 
     Promise.all([
       loadCourses(),
-      loadAppConfig().catch(() => ({ studentAuthRequired: false, publicCourseIds: [], student: null })),
+      loadAppConfig().catch(() => ({
+        studentAuthRequired: false,
+        phoneLoginCourseIds: [],
+        student: null,
+        phoneAccess: null,
+      })),
     ])
       .then(([loadedCourses, config]) => {
         if (!ignore) {
           setBaseCourses(loadedCourses)
           setAppConfig(config)
-          setStudentSession(config.student ?? null)
+          setStudentSession(config.student ?? config.phoneAccess ?? null)
           setCourseLoadError('')
         }
       })
@@ -734,6 +841,10 @@ export default function CourseDashboard() {
     )
   }
 
+  if (!IS_ADMIN_DEPLOYMENT && !studentSession && phoneLoginCourseIds.size > 0) {
+    return <PhoneAccessPanel />
+  }
+
   if (!course) {
     return (
       <div className="flex min-h-screen items-center justify-center px-5">
@@ -765,7 +876,7 @@ export default function CourseDashboard() {
 
       <main className="mx-auto max-w-7xl px-5 py-7 md:px-8">
         {IS_ADMIN_DEPLOYMENT && isAdminMode && (
-          <StudentAccessPanel courses={visibleCourses} publicCourseIds={[...publicCourseIds]} />
+          <StudentAccessPanel courses={visibleCourses} phoneLoginCourseIds={[...phoneLoginCourseIds]} />
         )}
 
         <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">

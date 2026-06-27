@@ -24,7 +24,7 @@ The server serves `dist/` and exposes `/api/*` for shared content, uploads, and 
 
 Student access is controlled from the admin UI. After a student pays, open the admin service, choose the student's course, add the student's phone number, and generate or set an initial password. The student site uses the phone number as the username and stores only a password hash in Postgres. By default, each student can have only one active session, and the first successful login locks the account to that browser/computer using a secure device cookie. Another computer is blocked until an admin resets the device lock. Students only see courses assigned to their account.
 
-Courses listed in `STUDENT_PUBLIC_COURSE_IDS` are open on the student site and do not require a username, password, single-session enforcement, or device locking. The default public course is `computational` (`מודלים חישוביים`).
+Courses listed in `STUDENT_PHONE_LOGIN_COURSE_IDS` use phone-only access on the student site and do not require a password, single-session enforcement, or device locking. The default phone-only course is `computational` (`מודלים חישוביים`). Admins approve access by pasting allowed phone numbers into each Computational Models marathon group.
 
 ## Railway layout
 
@@ -73,7 +73,8 @@ STUDENT_AUTH_REQUIRED=true
 STUDENT_SESSION_DAYS=30
 STUDENT_SINGLE_SESSION=true
 STUDENT_DEVICE_LOCK=true
-STUDENT_PUBLIC_COURSE_IDS=computational
+STUDENT_PHONE_LOGIN_COURSE_IDS=computational
+STUDENT_PHONE_ACCESS_SECRET=<choose-a-long-random-secret>
 ```
 
 `APP_ROLE` protects the server API. `VITE_APP_ROLE` controls which UI is built.
@@ -84,4 +85,6 @@ STUDENT_PUBLIC_COURSE_IDS=computational
 
 `STUDENT_DEVICE_LOCK=false` disables the first-device lock. Keep it enabled for strict paid-student access.
 
-`STUDENT_PUBLIC_COURSE_IDS` is a comma-separated list of course ids that are visible without login. Leave it empty to make every course require login again.
+`STUDENT_PHONE_LOGIN_COURSE_IDS` is a comma-separated list of root course ids that use phone-only login. Leave it empty to make every course require username and password again.
+
+`STUDENT_PHONE_ACCESS_SECRET` signs the phone-only access cookie. If omitted, the server falls back to another server-side secret, but setting it explicitly is recommended.

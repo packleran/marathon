@@ -36,6 +36,14 @@ export async function loadCourses() {
   }
 }
 
+export async function loginWithPhone(phone) {
+  return fetchJson('/api/student-auth/phone-login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ phone }),
+  })
+}
+
 export async function logoutStudent() {
   const response = await fetch(apiUrl('/api/student-auth/logout'), {
     method: 'POST',

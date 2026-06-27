@@ -80,9 +80,16 @@ function firstCourseId(student) {
   return Array.isArray(student.courseIds) ? student.courseIds[0] ?? '' : ''
 }
 
-function courseName(courses, courseId, publicCourseIdSet = new Set()) {
+function isPhoneLoginCourseId(courseId, phoneLoginCourseIdSet = new Set()) {
+  const normalizedCourseId = String(courseId ?? '')
+  if (phoneLoginCourseIdSet.has(normalizedCourseId)) return true
+
+  return [...phoneLoginCourseIdSet].some((rootId) => normalizedCourseId.startsWith(`${rootId}-group-`))
+}
+
+function courseName(courses, courseId, phoneLoginCourseIdSet = new Set()) {
   const label = courses.find((course) => String(course.id) === String(courseId))?.name ?? courseId
-  return publicCourseIdSet.has(String(courseId)) ? `${label} (פתוח)` : label
+  return isPhoneLoginCourseId(courseId, phoneLoginCourseIdSet) ? `${label} (טלפון בלבד)` : label
 }
 
 function toWhatsAppPhoneNumber(value) {
@@ -110,7 +117,7 @@ function createWhatsAppWebUrl(credentials) {
   return `https://web.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(createCredentialsMessage(credentials))}`
 }
 
-export default function StudentAccessPanel({ courses = [], publicCourseIds = [] }) {
+export default function StudentAccessPanel({ courses = [], phoneLoginCourseIds = [] }) {
   const [students, setStudents] = useState([])
   const [form, setForm] = useState({ phone: '', name: '', courseId: '', password: '' })
   const [passwordMode, setPasswordMode] = useState('auto')
@@ -124,9 +131,9 @@ export default function StudentAccessPanel({ courses = [], publicCourseIds = [] 
     [students],
   )
   const selectedCourseId = form.courseId || (courses[0]?.id ? String(courses[0].id) : '')
-  const publicCourseIdSet = useMemo(
-    () => new Set(publicCourseIds.map(String)),
-    [publicCourseIds],
+  const phoneLoginCourseIdSet = useMemo(
+    () => new Set(phoneLoginCourseIds.map(String)),
+    [phoneLoginCourseIds],
   )
 
   useEffect(() => {
@@ -167,7 +174,7 @@ export default function StudentAccessPanel({ courses = [], publicCourseIds = [] 
       phone: student.phone,
       name: student.name,
       password,
-      courseName: courseId ? courseName(courses, courseId, publicCourseIdSet) : '',
+      courseName: courseId ? courseName(courses, courseId, phoneLoginCourseIdSet) : '',
       whatsApp,
     }
   }
@@ -314,7 +321,7 @@ export default function StudentAccessPanel({ courses = [], publicCourseIds = [] 
             גישה לסטודנטים
           </h2>
           <p className="mt-1 text-xs leading-5 text-text-muted">
-            פתיחת משתמש אחרי תשלום. קורסים פתוחים לא דורשים משתמש; בקורסים בתשלום הכניסה הראשונה נועלת את המשתמש למחשב הראשון.
+            פתיחת משתמש אחרי תשלום. בקורסי טלפון בלבד מנהלים את הרשימה מתוך קבוצת המרתון; בקורסים בתשלום הכניסה הראשונה נועלת את המשתמש למחשב הראשון.
           </p>
         </div>
         <div className="inline-flex w-fit items-center gap-2 rounded-full bg-primary-soft px-3 py-1 text-xs font-semibold text-primary">
@@ -356,7 +363,7 @@ export default function StudentAccessPanel({ courses = [], publicCourseIds = [] 
             <option value="" disabled>בחר קורס</option>
             {courses.map((course) => (
               <option key={course.id} value={course.id}>
-                {courseName(courses, course.id, publicCourseIdSet)}
+                {courseName(courses, course.id, phoneLoginCourseIdSet)}
               </option>
             ))}
           </select>
@@ -490,12 +497,12 @@ export default function StudentAccessPanel({ courses = [], publicCourseIds = [] 
                     <option value="" disabled>ללא קורס</option>
                     {courses.map((course) => (
                       <option key={course.id} value={course.id}>
-                        {courseName(courses, course.id, publicCourseIdSet)}
+                        {courseName(courses, course.id, phoneLoginCourseIdSet)}
                       </option>
                     ))}
                     {firstCourseId(student) && !courses.some((course) => String(course.id) === firstCourseId(student)) && (
                       <option value={firstCourseId(student)}>
-                        {courseName(courses, firstCourseId(student), publicCourseIdSet)}
+                        {courseName(courses, firstCourseId(student), phoneLoginCourseIdSet)}
                       </option>
                     )}
                   </select>
@@ -506,8 +513,8 @@ export default function StudentAccessPanel({ courses = [], publicCourseIds = [] 
                   </div>
                   <div className="mt-1 text-xs text-text-muted">{formatDate(student.lastLoginAt)}</div>
                   <div className="mt-1 font-mono text-xs text-text-muted" dir="ltr">
-                    {student.publicAccessOnly || publicCourseIdSet.has(firstCourseId(student))
-                      ? 'Public course: no device lock'
+                    {student.phoneLoginOnly || isPhoneLoginCourseId(firstCourseId(student), phoneLoginCourseIdSet)
+                      ? 'Phone login: no device lock'
                       : student.lockedDevice
                         ? `Device: locked${student.lockedDeviceIpAddress ? ` (${student.lockedDeviceIpAddress})` : ''}`
                         : 'Device: pending'}
@@ -540,8 +547,8 @@ export default function StudentAccessPanel({ courses = [], publicCourseIds = [] 
                     type="button"
                     onClick={() => handleResetDeviceLock(student)}
                     disabled={
-                      student.publicAccessOnly ||
-                      publicCourseIdSet.has(firstCourseId(student)) ||
+                      student.phoneLoginOnly ||
+                      isPhoneLoginCourseId(firstCourseId(student), phoneLoginCourseIdSet) ||
                       (!student.lockedDevice && !student.lastDeniedIpAddress)
                     }
                     className="inline-flex items-center gap-2 rounded-lg border border-border bg-white px-3 py-2 text-xs font-medium text-text-2 shadow-sm transition-colors hover:border-primary/40 hover:text-primary disabled:cursor-not-allowed disabled:opacity-40 cursor-pointer"
