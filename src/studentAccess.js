@@ -44,6 +44,14 @@ export async function loginWithPhone(phone) {
   })
 }
 
+export async function loginWithCourseChoice(courseId) {
+  return fetchJson('/api/student-auth/course-login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ courseId }),
+  })
+}
+
 export async function logoutStudent() {
   const response = await fetch(apiUrl('/api/student-auth/logout'), {
     method: 'POST',

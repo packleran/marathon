@@ -5,7 +5,7 @@ import RecordingsSection from './RecordingsSection'
 import Sidebar from './Sidebar'
 import StudentAccessPanel from './StudentAccessPanel'
 import { getCourseTheme } from '../theme'
-import { loadAppConfig, loadCourses, loginWithPhone, logoutStudent } from '../studentAccess'
+import { loadAppConfig, loadCourses, loginWithCourseChoice, logoutStudent } from '../studentAccess'
 import { duplicateCourseMaterials } from '../uploadedMaterials'
 import {
   addCustomCourseOverride,
@@ -38,7 +38,7 @@ const contentTabs = [
 
 const phoneLoginRootCourseIds = new Set(['computational'])
 const loginCourseOptions = [
-  { id: 'computational', label: 'מודלים חישוביים', mode: 'phone' },
+  { id: 'computational', label: 'מודלים', mode: 'course-choice' },
   { id: 'probability', label: 'הסתברות', mode: 'password' },
   { id: 'algorithms', label: 'אלגוריתמים', mode: 'password' },
 ]
@@ -238,8 +238,8 @@ function StudentAccountBar({ student, onLogout }) {
         <div className="min-w-0">
           <div className="text-xs font-semibold text-text-muted">מחובר כסטודנט</div>
           <div className="truncate text-sm font-semibold text-text">
-            {student.name || student.phone}
-            {student.name && (
+            {student.name || student.phone || 'קבוצת מודלים'}
+            {student.name && student.phone && (
               <span className="mr-2 font-mono text-[13px] font-medium text-text-muted" dir="ltr">
                 {student.phone}
               </span>
@@ -266,27 +266,40 @@ function isPhoneLoginCourseId(courseId, phoneLoginCourseIds = new Set()) {
   return [...phoneLoginCourseIds].some((rootId) => normalizedCourseId.startsWith(`${rootId}-group-`))
 }
 
-function StudentEntryPanel({ phoneLoginCourseIds }) {
+function StudentEntryPanel({ phoneLoginCourseIds, modelGroupOptions = [] }) {
   const [selectedCourseId, setSelectedCourseId] = useState(loginCourseOptions[0].id)
-  const [phone, setPhone] = useState('')
+  const [selectedModelGroupId, setSelectedModelGroupId] = useState(modelGroupOptions[0]?.id ?? '')
   const [status, setStatus] = useState(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const selectedCourse = loginCourseOptions.find((option) => option.id === selectedCourseId) ?? loginCourseOptions[0]
-  const canUsePhoneLogin = selectedCourse.mode === 'phone' && isPhoneLoginCourseId(selectedCourse.id, phoneLoginCourseIds)
+  const canUseCourseChoice = selectedCourse.mode === 'course-choice' && isPhoneLoginCourseId(selectedCourse.id, phoneLoginCourseIds)
+  const availableModelGroupOptions = useMemo(() => (
+    modelGroupOptions.filter((option) => isPhoneLoginCourseId(option.id, phoneLoginCourseIds))
+  ), [modelGroupOptions, phoneLoginCourseIds])
+  const effectiveSelectedModelGroupId = availableModelGroupOptions.some((option) => (
+    option.id === selectedModelGroupId
+  ))
+    ? selectedModelGroupId
+    : availableModelGroupOptions[0]?.id ?? ''
 
   async function handleSubmit(event) {
     event.preventDefault()
     setStatus(null)
 
-    if (!canUsePhoneLogin) {
+    if (!canUseCourseChoice) {
       window.location.assign('/student-login')
+      return
+    }
+
+    if (!effectiveSelectedModelGroupId) {
+      setStatus({ type: 'error', text: 'צריך לבחור קבוצת מודלים' })
       return
     }
 
     setIsSubmitting(true)
 
     try {
-      await loginWithPhone(phone)
+      await loginWithCourseChoice(effectiveSelectedModelGroupId)
       window.location.assign('/')
     } catch (error) {
       setStatus({ type: 'error', text: error.message })
@@ -324,20 +337,39 @@ function StudentEntryPanel({ phoneLoginCourseIds }) {
             )
           })}
         </div>
-        {canUsePhoneLogin ? (
-          <label className="mt-5 block text-xs font-semibold uppercase tracking-wider text-text-muted">
-            טלפון
-            <input
-              value={phone}
-              onChange={(event) => setPhone(event.target.value)}
-              inputMode="tel"
-              autoComplete="tel"
-              autoFocus
-              placeholder="0521234567"
-              className="mt-1.5 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm font-normal text-text outline-none focus:border-primary focus:ring-2 focus:ring-primary-soft"
-              required
-            />
-          </label>
+        {canUseCourseChoice ? (
+          <div className="mt-5">
+            <div className="text-xs font-semibold uppercase tracking-wider text-text-muted">
+              בחירת קבוצת מודלים
+            </div>
+            <div className="mt-2 grid gap-2">
+              {availableModelGroupOptions.map((option) => {
+                const isSelected = option.id === effectiveSelectedModelGroupId
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedModelGroupId(option.id)
+                      setStatus(null)
+                    }}
+                    className={`rounded-xl border px-3 py-3 text-right text-sm font-semibold transition-colors cursor-pointer ${
+                      isSelected
+                        ? 'border-primary bg-primary-soft text-primary'
+                        : 'border-border bg-white text-text hover:border-primary/35 hover:text-primary'
+                    }`}
+                  >
+                    {option.label}
+                  </button>
+                )
+              })}
+              {availableModelGroupOptions.length === 0 && (
+                <div className="rounded-xl border border-border bg-inset px-3 py-3 text-sm font-medium text-text-muted">
+                  אין כרגע קבוצות מודלים זמינות.
+                </div>
+              )}
+            </div>
+          </div>
         ) : (
           <div className="mt-5 rounded-xl border border-border-subtle bg-inset px-4 py-3 text-sm text-text-2">
             הכניסה לקורס הזה מתבצעת עם טלפון וסיסמה.
@@ -345,10 +377,10 @@ function StudentEntryPanel({ phoneLoginCourseIds }) {
         )}
         <button
           type="submit"
-          disabled={isSubmitting || (canUsePhoneLogin && !phone.trim())}
+          disabled={isSubmitting || (canUseCourseChoice && availableModelGroupOptions.length === 0)}
           className="mt-5 w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
         >
-          {canUsePhoneLogin ? 'כניסה' : 'המשך לכניסה עם סיסמה'}
+          {canUseCourseChoice ? 'כניסה לקבוצה' : 'המשך לכניסה עם סיסמה'}
         </button>
         {status && (
           <div className="mt-4 text-sm text-danger" role="alert">
@@ -467,19 +499,6 @@ function CourseEditor({
             />
           </label>
         </div>
-        {isPhoneLoginGroup && (
-          <label className="mt-4 block text-xs font-semibold text-text-muted uppercase tracking-wider">
-            טלפונים מאושרים
-            <textarea
-              dir="ltr"
-              value={form.approvedPhones}
-              onChange={(event) => updateField('approvedPhones', event.target.value)}
-              rows={6}
-              placeholder={'0521234567\n0527654321'}
-              className="mt-1.5 w-full resize-y rounded-xl border border-border bg-white px-3 py-2 text-xs font-mono font-normal leading-relaxed text-text outline-none focus:border-primary focus:ring-2 focus:ring-primary-soft"
-            />
-          </label>
-        )}
         <details className="mt-4 rounded-xl border border-border-subtle bg-white p-4">
           <summary className="cursor-pointer text-xs font-semibold text-text-muted">
             עריכה מתקדמת: הקלטות, תאריכים וקישורים
@@ -607,9 +626,9 @@ export default function CourseDashboard() {
   const assignedCourseIds = new Set(
     Array.isArray(studentSession?.courseIds) ? studentSession.courseIds.map(String) : [],
   )
-  const phoneLoginCourseIds = new Set(
+  const phoneLoginCourseIds = useMemo(() => new Set(
     Array.isArray(appConfig?.phoneLoginCourseIds) ? appConfig.phoneLoginCourseIds.map(String) : [],
-  )
+  ), [appConfig])
   const visibleCourses = shouldFilterCourses
     ? allVisibleCourses.filter((candidate) => assignedCourseIds.has(String(candidate.id)))
     : allVisibleCourses
@@ -632,6 +651,7 @@ export default function CourseDashboard() {
       loadAppConfig().catch(() => ({
         studentAuthRequired: false,
         phoneLoginCourseIds: [],
+        modelGroupOptions: [],
         student: null,
         phoneAccess: null,
       })),
@@ -885,7 +905,12 @@ export default function CourseDashboard() {
   }
 
   if (!IS_ADMIN_DEPLOYMENT && !studentSession && phoneLoginCourseIds.size > 0) {
-    return <StudentEntryPanel phoneLoginCourseIds={phoneLoginCourseIds} />
+    return (
+      <StudentEntryPanel
+        phoneLoginCourseIds={phoneLoginCourseIds}
+        modelGroupOptions={appConfig?.modelGroupOptions ?? []}
+      />
+    )
   }
 
   if (!course) {

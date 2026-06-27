@@ -48,6 +48,7 @@ const studentPhoneAccessSecret = String(
   databaseUrl ??
   'marathon-phone-access-local-dev',
 )
+const modelGroupFallbackLeaders = ['יובל', 'שחר']
 const whatsAppCredentialsEnabled = !disabledAuthValues.has(String(process.env.WHATSAPP_SEND_CREDENTIALS ?? 'true').toLowerCase())
 const whatsAppGraphApiVersion = process.env.WHATSAPP_GRAPH_API_VERSION ?? 'v25.0'
 const whatsAppPhoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID ?? ''
@@ -218,14 +219,17 @@ function verifySignedPhoneAccessToken(token) {
     if (!parsed || typeof parsed !== 'object') return null
     if (Number(parsed.expiresAt) <= Date.now()) return null
 
-    const phone = normalizePhone(parsed.phone)
     const courseIds = normalizeCourseIds(parsed.courseIds)
-    if (!isValidPhone(phone) || courseIds.length === 0) return null
+    if (courseIds.length === 0) return null
+
+    const type = parsed.type === 'course-choice' ? 'course-choice' : 'phone'
+    const phone = normalizePhone(parsed.phone)
+    if (type === 'phone' && !isValidPhone(phone)) return null
 
     return {
-      type: 'phone',
-      phone,
-      name: '',
+      type,
+      phone: type === 'phone' ? phone : '',
+      name: String(parsed.name ?? '').trim(),
       courseIds,
       expiresAt: Number(parsed.expiresAt),
     }
@@ -537,6 +541,41 @@ function applyServerCourseOverrides(courseList, overrides) {
     }))
 }
 
+function inferModelGroupLeader(course, index) {
+  const text = `${course?.name ?? ''} ${course?.subtitle ?? ''}`
+  if (text.includes('יובל')) return 'יובל'
+  if (text.includes('שחר')) return 'שחר'
+
+  return modelGroupFallbackLeaders[index] ?? `קבוצה ${index + 1}`
+}
+
+function createPhoneLoginCourseOption(course, index) {
+  const leader = inferModelGroupLeader(course, index)
+
+  return {
+    id: String(course.id),
+    label: modelGroupFallbackLeaders.includes(leader)
+      ? `מודלים ראש קבוצה ${leader}`
+      : `מודלים ${leader}`,
+    name: String(course.name ?? ''),
+    sourceCourseId: String(course.sourceCourseId ?? course.id),
+  }
+}
+
+function getPhoneLoginCourseOptions(overrides) {
+  return applyServerCourseOverrides(courses, overrides)
+    .filter((course) => isPhoneLoginCourse(course))
+    .map((course, index) => createPhoneLoginCourseOption(course, index))
+}
+
+function getPhoneLoginCourseById(courseId, overrides) {
+  const normalizedCourseId = String(courseId ?? '').trim()
+  if (!normalizedCourseId) return null
+
+  return applyServerCourseOverrides(courses, overrides)
+    .find((course) => isPhoneLoginCourse(course) && String(course.id) === normalizedCourseId) ?? null
+}
+
 function getPhoneLoginCourseIdsForPhone(phone, overrides) {
   const normalizedPhone = normalizePhone(phone)
   if (!isValidPhone(normalizedPhone)) return []
@@ -574,6 +613,7 @@ function isPublicStudentApiRequest(req) {
   return (
     req.path === '/api/config' ||
     req.path === '/api/courses' ||
+    req.path === '/api/student-auth/course-login' ||
     req.path === '/api/student-auth/phone-login' ||
     req.path === '/api/student-auth/logout'
   )
@@ -1161,6 +1201,9 @@ app.get('/student-login', (req, res) => {
 app.get('/api/config', asyncHandler(async (req, res) => {
   const student = await getAuthenticatedStudent(req)
   const phoneAccess = student ? null : getAuthenticatedPhoneAccess(req)
+  const contentOverrides = studentPhoneLoginCourseIds.length > 0
+    ? await loadContentOverridesFromDatabase()
+    : {}
 
   res.json({
     role: isAdminService ? 'admin' : 'student',
@@ -1168,6 +1211,7 @@ app.get('/api/config', asyncHandler(async (req, res) => {
     hasDatabase: Boolean(pool),
     studentAuthRequired: isStudentAuthRequired(),
     phoneLoginCourseIds: studentPhoneLoginCourseIds,
+    modelGroupOptions: getPhoneLoginCourseOptions(contentOverrides),
     publicCourseIds: [],
     phoneAccess,
     student,
@@ -1386,6 +1430,39 @@ app.post('/api/student-auth/phone-login', requireDatabase, asyncHandler(async (r
     phone,
     name: '',
     courseIds,
+    expiresAt,
+  }
+
+  clearStudentSessionCookie(req, res)
+  setStudentPhoneAccessCookie(req, res, phoneAccess)
+  res.json({ phoneAccess })
+}))
+
+app.post('/api/student-auth/course-login', requireDatabase, asyncHandler(async (req, res) => {
+  if (!isStudentAuthRequired() || studentPhoneLoginCourseIds.length === 0) {
+    res.status(400).json({ error: 'Course choice login is not enabled' })
+    return
+  }
+
+  const courseId = String(req.body?.courseId ?? '').trim()
+  const overrides = await loadContentOverridesFromDatabase()
+  const course = getPhoneLoginCourseById(courseId, overrides)
+  if (!course) {
+    clearStudentPhoneAccessCookie(req, res)
+    res.status(404).json({ error: 'קבוצת המודלים שנבחרה לא נמצאה' })
+    return
+  }
+
+  const option = createPhoneLoginCourseOption(
+    course,
+    getPhoneLoginCourseOptions(overrides).findIndex((item) => item.id === String(course.id)),
+  )
+  const expiresAt = Date.now() + studentSessionDays * 24 * 60 * 60 * 1000
+  const phoneAccess = {
+    type: 'course-choice',
+    phone: '',
+    name: option.label,
+    courseIds: [String(course.id)],
     expiresAt,
   }
 
