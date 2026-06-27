@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   createStudent,
   listStudents,
-  resetStudentDeviceLock,
   resetStudentPassword,
   revokeStudentSessions,
   updateStudent,
@@ -42,10 +41,6 @@ function LogoutIcon() {
 
 function CheckIcon() {
   return <IconButtonSvg path="M4.5 12.75l5.25 5.25L19.5 6" />
-}
-
-function ShieldIcon() {
-  return <IconButtonSvg path="M12 3l7.5 3v5.25c0 4.64-3.1 8.8-7.5 10.05-4.4-1.25-7.5-5.41-7.5-10.05V6L12 3z M9.75 12.75l1.5 1.5 3-4" />
 }
 
 function formatDate(value) {
@@ -275,25 +270,6 @@ export default function StudentAccessPanel({ courses = [], phoneLoginCourseIds =
     }
   }
 
-  async function handleResetDeviceLock(student) {
-    if (!window.confirm(`לאפס את נעילת המכשיר של ${student.phone}? הכניסה הבאה תנעל מחשב חדש.`)) return
-
-    setStatus(null)
-
-    try {
-      const data = await resetStudentDeviceLock(student.id)
-      setStudents((current) => upsertStudent(current, data.student))
-      setStatus({
-        type: 'success',
-        text: data.revokedSessions > 0
-          ? 'נעילת המכשיר אופסה והחיבורים נותקו'
-          : 'נעילת המכשיר אופסה',
-      })
-    } catch (error) {
-      setStatus({ type: 'error', text: error.message })
-    }
-  }
-
   async function handleCopyCredentials() {
     if (!credentials) return
 
@@ -321,7 +297,7 @@ export default function StudentAccessPanel({ courses = [], phoneLoginCourseIds =
             גישה לסטודנטים
           </h2>
           <p className="mt-1 text-xs leading-5 text-text-muted">
-            פתיחת משתמש אחרי תשלום. בקורסי טלפון בלבד מנהלים את הרשימה מתוך קבוצת המרתון; בקורסים בתשלום הכניסה הראשונה נועלת את המשתמש למחשב הראשון.
+            פתיחת משתמש אחרי תשלום. בקורסים בתשלום אפשר חיבור פעיל אחד בלבד; כדי לעבור מחשב צריך לצאת או לנתק חיבורים פעילים.
           </p>
         </div>
         <div className="inline-flex w-fit items-center gap-2 rounded-full bg-primary-soft px-3 py-1 text-xs font-semibold text-primary">
@@ -514,16 +490,11 @@ export default function StudentAccessPanel({ courses = [], phoneLoginCourseIds =
                   <div className="mt-1 text-xs text-text-muted">{formatDate(student.lastLoginAt)}</div>
                   <div className="mt-1 font-mono text-xs text-text-muted" dir="ltr">
                     {student.phoneLoginOnly || isPhoneLoginCourseId(firstCourseId(student), phoneLoginCourseIdSet)
-                      ? 'Phone login: no device lock'
-                      : student.lockedDevice
-                        ? `Device: locked${student.lockedDeviceIpAddress ? ` (${student.lockedDeviceIpAddress})` : ''}`
-                        : 'Device: pending'}
+                      ? 'Phone login: open'
+                      : student.activeSessionCount > 0
+                        ? 'Session: active'
+                        : 'Session: none'}
                   </div>
-                  {student.lastDeniedIpAddress && (
-                    <div className="mt-1 text-xs text-danger">
-                      ניסיון חסום: <span className="font-mono" dir="ltr">{student.lastDeniedIpAddress}</span>
-                    </div>
-                  )}
                 </div>
                 <div className="flex flex-wrap items-center justify-end gap-2">
                   <button
@@ -542,19 +513,6 @@ export default function StudentAccessPanel({ courses = [], phoneLoginCourseIds =
                   >
                     <LogoutIcon />
                     נתק
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleResetDeviceLock(student)}
-                    disabled={
-                      student.phoneLoginOnly ||
-                      isPhoneLoginCourseId(firstCourseId(student), phoneLoginCourseIdSet) ||
-                      (!student.lockedDevice && !student.lastDeniedIpAddress)
-                    }
-                    className="inline-flex items-center gap-2 rounded-lg border border-border bg-white px-3 py-2 text-xs font-medium text-text-2 shadow-sm transition-colors hover:border-primary/40 hover:text-primary disabled:cursor-not-allowed disabled:opacity-40 cursor-pointer"
-                  >
-                    <ShieldIcon />
-                    אפס מכשיר
                   </button>
                   <button
                     type="button"

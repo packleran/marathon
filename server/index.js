@@ -27,16 +27,12 @@ const adminUsername = process.env.ADMIN_USERNAME ?? 'admin'
 const adminPassword = process.env.ADMIN_PASSWORD ?? ''
 const databaseUrl = process.env.DATABASE_URL
 const studentSessionCookie = 'marathon_student_session'
-const studentDeviceCookie = 'marathon_student_device'
 const studentPhoneAccessCookie = 'marathon_phone_access'
-const studentDeviceCookieMaxAge = 400 * 24 * 60 * 60
 const configuredStudentSessionDays = Number(process.env.STUDENT_SESSION_DAYS ?? 30)
 const studentSessionDays = Number.isFinite(configuredStudentSessionDays)
   ? Math.max(1, configuredStudentSessionDays)
   : 30
 const disabledAuthValues = new Set(['0', 'false', 'no', 'off'])
-const studentSingleSession = !disabledAuthValues.has(String(process.env.STUDENT_SINGLE_SESSION ?? 'true').toLowerCase())
-const studentDeviceLock = !disabledAuthValues.has(String(process.env.STUDENT_DEVICE_LOCK ?? 'true').toLowerCase())
 const studentPhoneLoginCourseIds = normalizeCourseIds(
   process.env.STUDENT_PHONE_LOGIN_COURSE_IDS ?? process.env.STUDENT_PUBLIC_COURSE_IDS ?? 'computational',
 )
@@ -76,15 +72,7 @@ function isStudentAuthRequired() {
 }
 
 function isStudentSingleSessionRequired() {
-  return isStudentAuthRequired() && studentSingleSession
-}
-
-function isStudentDeviceLockRequired() {
-  return isStudentAuthRequired() && studentDeviceLock
-}
-
-function isStudentDeviceLockRequiredForCourseIds(courseIds) {
-  return isStudentDeviceLockRequired() && !hasOnlyPhoneLoginCourses(courseIds)
+  return isStudentAuthRequired()
 }
 
 function isStudentSingleSessionRequiredForCourseIds(courseIds) {
@@ -188,10 +176,6 @@ async function verifyPassword(password, storedHash) {
 }
 
 function hashSessionToken(token) {
-  return createHash('sha256').update(token).digest('hex')
-}
-
-function hashDeviceToken(token) {
   return createHash('sha256').update(token).digest('hex')
 }
 
@@ -318,14 +302,6 @@ function clearStudentPhoneAccessCookie(req, res) {
   appendSetCookie(res, serializeCookie(studentPhoneAccessCookie, '', {
     expires: new Date(0),
     maxAge: 0,
-    secure: shouldUseSecureCookie(req),
-  }))
-}
-
-function setStudentDeviceCookie(req, res, token) {
-  appendSetCookie(res, serializeCookie(studentDeviceCookie, token, {
-    expires: new Date(Date.now() + studentDeviceCookieMaxAge * 1000),
-    maxAge: studentDeviceCookieMaxAge,
     secure: shouldUseSecureCookie(req),
   }))
 }
@@ -860,34 +836,12 @@ async function getAuthenticatedStudent(req) {
 
   if (result.rowCount === 0) return null
 
-  const studentRow = result.rows[0]
-  const lockedDeviceId = String(studentRow.locked_device_id ?? '')
-  const deviceToken = parseCookies(req)[studentDeviceCookie]
-  const currentDeviceId = deviceToken ? hashDeviceToken(deviceToken) : ''
-  if (
-    isStudentDeviceLockRequiredForCourseIds(studentRow.course_ids) &&
-    lockedDeviceId &&
-    currentDeviceId !== lockedDeviceId
-  ) {
-    await pool.query(
-      `UPDATE marathon_students
-       SET last_denied_ip_address = $2,
-           last_denied_user_agent = $3,
-           last_denied_at = now(),
-           updated_at = now()
-       WHERE id = $1`,
-      [studentRow.id, requestIp(req), requestUserAgent(req)],
-    ).catch(() => {})
-    await pool.query('DELETE FROM marathon_student_sessions WHERE id = $1', [hashSessionToken(token)]).catch(() => {})
-    return null
-  }
-
   await pool.query(
     'UPDATE marathon_student_sessions SET last_seen_at = now() WHERE id = $1',
     [hashSessionToken(token)],
   ).catch(() => {})
 
-  return serializeStudent(studentRow)
+  return serializeStudent(result.rows[0])
 }
 
 function getAuthenticatedPhoneAccess(req) {
@@ -1270,7 +1224,7 @@ app.post('/api/student-auth/login', requireDatabase, asyncHandler(async (req, re
     return
   }
 
-  let studentRow = result.rows[0]
+  const studentRow = result.rows[0]
   const isPasswordValid = await verifyPassword(password, studentRow.password_hash)
   if (!isPasswordValid) {
     res.status(401).json({ error: 'טלפון או סיסמה שגויים' })
@@ -1279,78 +1233,22 @@ app.post('/api/student-auth/login', requireDatabase, asyncHandler(async (req, re
 
   const currentIpAddress = requestIp(req)
   const currentUserAgent = requestUserAgent(req)
-  let deviceToken = parseCookies(req)[studentDeviceCookie]
-  if (!deviceToken) {
-    deviceToken = randomBytes(32).toString('base64url')
-  }
-  const currentDeviceId = hashDeviceToken(deviceToken)
-  const shouldUseDeviceLock = isStudentDeviceLockRequiredForCourseIds(studentRow.course_ids)
   const shouldUseSingleSession = isStudentSingleSessionRequiredForCourseIds(studentRow.course_ids)
-
-  if (shouldUseDeviceLock) {
-    if (studentRow.locked_device_id && studentRow.locked_device_id !== currentDeviceId) {
-      await pool.query(
-        `UPDATE marathon_students
-         SET last_denied_ip_address = $2,
-             last_denied_user_agent = $3,
-             last_denied_at = now(),
-             updated_at = now()
-         WHERE id = $1`,
-        [studentRow.id, currentIpAddress, currentUserAgent],
-      )
-      clearStudentSessionCookie(req, res)
-      res.status(403).json({
-        error: 'המשתמש נעול למחשב אחר. אם החלפת מחשב או דפדפן, צריך לבקש מהאדמין לאפס את נעילת המכשיר.',
-      })
-      return
-    }
-
-    const deviceLockResult = await pool.query(
-      `UPDATE marathon_students
-       SET locked_device_id = CASE WHEN locked_device_id = '' THEN $2 ELSE locked_device_id END,
-           locked_device_at = CASE WHEN locked_device_id = '' THEN now() ELSE locked_device_at END,
-           locked_device_ip_address = CASE WHEN locked_device_id = '' THEN $3 ELSE locked_device_ip_address END,
-           locked_device_user_agent = CASE WHEN locked_device_id = '' THEN $4 ELSE locked_device_user_agent END,
-           updated_at = now()
-       WHERE id = $1
-         AND (locked_device_id = '' OR locked_device_id = $2)
-       RETURNING id, phone, name, active, password_hash,
-                 course_ids,
-                 locked_device_id, locked_device_at, locked_device_ip_address, locked_device_user_agent,
-                 last_denied_ip_address, last_denied_user_agent, last_denied_at,
-                 created_at, updated_at, last_login_at`,
-      [studentRow.id, currentDeviceId, currentIpAddress, currentUserAgent],
-    )
-
-    if (deviceLockResult.rowCount === 0) {
-      await pool.query(
-        `UPDATE marathon_students
-         SET last_denied_ip_address = $2,
-             last_denied_user_agent = $3,
-             last_denied_at = now(),
-             updated_at = now()
-         WHERE id = $1`,
-        [studentRow.id, currentIpAddress, currentUserAgent],
-      )
-      clearStudentSessionCookie(req, res)
-      res.status(403).json({
-        error: 'המשתמש נעול למחשב אחר. אם החלפת מחשב או דפדפן, צריך לבקש מהאדמין לאפס את נעילת המכשיר.',
-      })
-      return
-    }
-
-    studentRow = deviceLockResult.rows[0]
-  }
 
   const token = randomBytes(32).toString('base64url')
   const expiresAt = new Date(Date.now() + studentSessionDays * 24 * 60 * 60 * 1000)
   const currentSessionToken = parseCookies(req)[studentSessionCookie]
   const currentSessionId = currentSessionToken ? hashSessionToken(currentSessionToken) : ''
 
-  await pool.query('DELETE FROM marathon_student_sessions WHERE expires_at <= now()')
-  if (shouldUseSingleSession) {
-    if (!shouldUseDeviceLock) {
-      const activeSessions = await pool.query(
+  const client = await pool.connect()
+
+  try {
+    await client.query('BEGIN')
+    await client.query('SELECT pg_advisory_xact_lock($1, hashtext($2))', [20260627, studentRow.id])
+    await client.query('DELETE FROM marathon_student_sessions WHERE expires_at <= now()')
+
+    if (shouldUseSingleSession) {
+      const activeSessions = await client.query(
         `SELECT id
          FROM marathon_student_sessions
          WHERE student_id = $1
@@ -1361,39 +1259,52 @@ app.post('/api/student-auth/login', requireDatabase, asyncHandler(async (req, re
       )
 
       if (activeSessions.rowCount > 0) {
+        await client.query('ROLLBACK')
         res.status(409).json({
-          error: 'המשתמש כבר מחובר ממכשיר אחר. צריך לצאת מהמכשיר הקודם או לבקש מהאדמין לנתק סשנים.',
+          error: 'המשתמש כבר מחובר ממכשיר אחר. צריך לצאת מהמכשיר הקודם או לבקש מהאדמין לנתק חיבורים פעילים.',
         })
         return
       }
+
+      await client.query('DELETE FROM marathon_student_sessions WHERE student_id = $1', [studentRow.id])
     }
 
-    await pool.query('DELETE FROM marathon_student_sessions WHERE student_id = $1', [studentRow.id])
-  }
+    await client.query(
+      `INSERT INTO marathon_student_sessions (id, student_id, expires_at, ip_address, user_agent)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [hashSessionToken(token), studentRow.id, expiresAt, currentIpAddress, currentUserAgent],
+    )
+    const updatedStudent = await client.query(
+      `UPDATE marathon_students
+       SET last_login_at = now(),
+           locked_device_id = '',
+           locked_device_at = NULL,
+           locked_device_ip_address = '',
+           locked_device_user_agent = '',
+           last_denied_ip_address = '',
+           last_denied_user_agent = '',
+           last_denied_at = NULL,
+           updated_at = now()
+       WHERE id = $1
+       RETURNING id, phone, name, active,
+                 course_ids,
+                 locked_device_id, locked_device_at, locked_device_ip_address, locked_device_user_agent,
+                 last_denied_ip_address, last_denied_user_agent, last_denied_at,
+                 created_at, updated_at, last_login_at`,
+      [studentRow.id],
+    )
 
-  await pool.query(
-    `INSERT INTO marathon_student_sessions (id, student_id, expires_at, ip_address, user_agent)
-     VALUES ($1, $2, $3, $4, $5)`,
-    [hashSessionToken(token), studentRow.id, expiresAt, currentIpAddress, currentUserAgent],
-  )
-  const updatedStudent = await pool.query(
-    `UPDATE marathon_students
-     SET last_login_at = now(), updated_at = now()
-     WHERE id = $1
-     RETURNING id, phone, name, active,
-               course_ids,
-               locked_device_id, locked_device_at, locked_device_ip_address, locked_device_user_agent,
-               last_denied_ip_address, last_denied_user_agent, last_denied_at,
-               created_at, updated_at, last_login_at`,
-    [studentRow.id],
-  )
+    await client.query('COMMIT')
 
-  if (shouldUseDeviceLock) {
-    setStudentDeviceCookie(req, res, deviceToken)
+    clearStudentPhoneAccessCookie(req, res)
+    setStudentSessionCookie(req, res, token, expiresAt)
+    res.json({ student: serializeStudent(updatedStudent.rows[0]) })
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {})
+    throw error
+  } finally {
+    client.release()
   }
-  clearStudentPhoneAccessCookie(req, res)
-  setStudentSessionCookie(req, res, token, expiresAt)
-  res.json({ student: serializeStudent(updatedStudent.rows[0]) })
 }))
 
 app.post('/api/student-auth/phone-login', requireDatabase, asyncHandler(async (req, res) => {
@@ -1538,10 +1449,28 @@ app.post('/api/students', requireDatabase, requireAdmin, asyncHandler(async (req
 
   const passwordHash = await hashPassword(password)
 
+  const client = await pool.connect()
+
   try {
-    const result = await pool.query(
+    await client.query('BEGIN')
+
+    const result = await client.query(
       `INSERT INTO marathon_students (id, phone, name, password_hash, active, course_ids)
        VALUES ($1, $2, $3, $4, true, $5::jsonb)
+       ON CONFLICT (phone)
+       DO UPDATE SET
+         name = CASE WHEN EXCLUDED.name <> '' THEN EXCLUDED.name ELSE marathon_students.name END,
+         password_hash = EXCLUDED.password_hash,
+         active = true,
+         course_ids = EXCLUDED.course_ids,
+         locked_device_id = '',
+         locked_device_at = NULL,
+         locked_device_ip_address = '',
+         locked_device_user_agent = '',
+         last_denied_ip_address = '',
+         last_denied_user_agent = '',
+         last_denied_at = NULL,
+         updated_at = now()
        RETURNING id, phone, name, active,
                  course_ids,
                  locked_device_id, locked_device_at, locked_device_ip_address, locked_device_user_agent,
@@ -1550,17 +1479,18 @@ app.post('/api/students', requireDatabase, requireAdmin, asyncHandler(async (req
       [createId(), phone, name, passwordHash, JSON.stringify(courseIds)],
     )
 
+    await client.query('DELETE FROM marathon_student_sessions WHERE student_id = $1', [result.rows[0].id])
+    await client.query('COMMIT')
+
     const student = result.rows[0]
     const whatsApp = await sendCredentialsWhatsApp({ student, password })
 
     res.status(201).json({ student: serializeStudent(student), password, whatsApp })
   } catch (error) {
-    if (error.code === '23505') {
-      res.status(409).json({ error: 'Student already exists' })
-      return
-    }
-
+    await client.query('ROLLBACK').catch(() => {})
     throw error
+  } finally {
+    client.release()
   }
 }))
 
