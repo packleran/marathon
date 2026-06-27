@@ -1208,6 +1208,8 @@ app.post('/api/student-auth/login', requireDatabase, asyncHandler(async (req, re
     return
   }
 
+  console.log(`[student-auth/login] phone=${phone} querying database`)
+
   const result = await pool.query(
     `SELECT id, phone, name, active, password_hash,
             course_ids,
@@ -1219,13 +1221,26 @@ app.post('/api/student-auth/login', requireDatabase, asyncHandler(async (req, re
     [phone],
   )
 
-  if (result.rowCount === 0 || !result.rows[0].active) {
+  const found = result.rowCount > 0
+  const active = found ? Boolean(result.rows[0].active) : null
+  console.log(`[student-auth/login] phone=${phone} found=${found} active=${active}`)
+
+  if (!found || !active) {
     res.status(401).json({ error: 'טלפון או סיסמה שגויים' })
     return
   }
 
   const studentRow = result.rows[0]
-  const isPasswordValid = await verifyPassword(password, studentRow.password_hash)
+  const hashFormat = String(studentRow.password_hash ?? '').slice(0, 20)
+  let isPasswordValid = false
+  try {
+    isPasswordValid = await verifyPassword(password, studentRow.password_hash)
+  } catch (verifyError) {
+    console.error(`[student-auth/login] phone=${phone} password verification error:`, verifyError)
+    throw verifyError
+  }
+  console.log(`[student-auth/login] phone=${phone} hash_format=${hashFormat}... password_valid=${isPasswordValid}`)
+
   if (!isPasswordValid) {
     res.status(401).json({ error: 'טלפון או סיסמה שגויים' })
     return
