@@ -34,7 +34,7 @@ const studentSessionDays = Number.isFinite(configuredStudentSessionDays)
   : 30
 const disabledAuthValues = new Set(['0', 'false', 'no', 'off'])
 const studentPhoneLoginCourseIds = normalizeCourseIds(
-  process.env.STUDENT_PHONE_LOGIN_COURSE_IDS ?? process.env.STUDENT_PUBLIC_COURSE_IDS ?? 'computational',
+  process.env.STUDENT_OPEN_GROUP_COURSE_IDS ?? '',
 )
 const studentPhoneLoginCourseIdSet = new Set(studentPhoneLoginCourseIds)
 const studentPhoneAccessSecret = String(
@@ -845,9 +845,13 @@ async function getAuthenticatedStudent(req) {
 }
 
 function getAuthenticatedPhoneAccess(req) {
-  if (!shouldEnforceStudentCourseAccess()) return null
+  if (!shouldEnforceStudentCourseAccess() || studentPhoneLoginCourseIds.length === 0) return null
 
-  return verifySignedPhoneAccessToken(parseCookies(req)[studentPhoneAccessCookie])
+  const phoneAccess = verifySignedPhoneAccessToken(parseCookies(req)[studentPhoneAccessCookie])
+  if (!phoneAccess) return null
+  if (!phoneAccess.courseIds.every((courseId) => isPhoneLoginCourseId(courseId))) return null
+
+  return phoneAccess
 }
 
 async function requireStudentAuth(req, res, next) {
