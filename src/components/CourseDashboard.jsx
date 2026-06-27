@@ -640,18 +640,6 @@ export default function CourseDashboard() {
   const canEditContent = IS_ADMIN_DEPLOYMENT && isAdminMode && !isCourseLocked
 
   useEffect(() => {
-    if (
-      !isAppConfigLoading &&
-      !IS_ADMIN_DEPLOYMENT &&
-      appConfig?.studentAuthRequired !== false &&
-      !studentSession &&
-      phoneLoginCourseIds.size === 0
-    ) {
-      window.location.assign('/student-login')
-    }
-  }, [appConfig?.studentAuthRequired, isAppConfigLoading, phoneLoginCourseIds, studentSession])
-
-  useEffect(() => {
     contentOverridesRef.current = contentOverrides
   }, [contentOverrides])
 

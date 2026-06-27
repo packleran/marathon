@@ -24,7 +24,7 @@ The server serves `dist/` and exposes `/api/*` for shared content, uploads, and 
 
 Student access is controlled from the admin UI. After a student pays, open the admin service, choose the student's course, add the student's phone number, and generate or set an initial password. The student site uses the phone number as the username and stores only a password hash in Postgres. Students in password-protected courses can have only one active session at a time; another browser or computer is blocked until the current session logs out, expires, or an admin disconnects active sessions. Students only see courses assigned to their account.
 
-Courses listed in `STUDENT_OPEN_GROUP_COURSE_IDS` use open group-choice access on the student site and do not require a password, single-session enforcement, or a phone number. Leave it unset to require the normal student login page for every course.
+Courses listed in `STUDENT_PHONE_LOGIN_COURSE_IDS` use open group-choice access on the student site and do not require a password, single-session enforcement, or a phone number. The default group-choice course is `computational` (`מודלים חישוביים`). The student entry screen offers the available Computational Models groups, such as `מודלים ראש קבוצה יובל` and `מודלים ראש קבוצה שחר`, and the selected group is the only course shown afterward.
 
 ## Railway layout
 
@@ -71,6 +71,7 @@ VITE_CONTENT_BACKEND=api
 DATABASE_URL=${{Postgres.DATABASE_URL}}
 STUDENT_AUTH_REQUIRED=true
 STUDENT_SESSION_DAYS=30
+STUDENT_PHONE_LOGIN_COURSE_IDS=computational
 STUDENT_PHONE_ACCESS_SECRET=<choose-a-long-random-secret>
 ```
 
@@ -80,6 +81,6 @@ STUDENT_PHONE_ACCESS_SECRET=<choose-a-long-random-secret>
 
 Password-protected courses always enforce one active session per student. There is no permanent first-device lock; students can move to another computer after logging out or after an admin disconnects active sessions.
 
-`STUDENT_OPEN_GROUP_COURSE_IDS` is a comma-separated list of root course ids that use open group-choice login. Leave it unset to make every course require username and password.
+`STUDENT_PHONE_LOGIN_COURSE_IDS` is a comma-separated list of root course ids that use open group-choice login. Leave it empty to make every course require username and password again.
 
 `STUDENT_PHONE_ACCESS_SECRET` signs the group-choice access cookie. If omitted, the server falls back to another server-side secret, but setting it explicitly is recommended.
