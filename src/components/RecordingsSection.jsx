@@ -46,6 +46,15 @@ function providerText(provider) {
   return ''
 }
 
+function recordingSortTime(recording) {
+  const value = Date.parse(recording?.createdAt ?? '')
+  return Number.isFinite(value) ? value : 0
+}
+
+function sortRecordingsOldestFirst(recordings) {
+  return [...recordings].sort((a, b) => recordingSortTime(a) - recordingSortTime(b))
+}
+
 function formatViewerLabel(student) {
   const name = String(student?.name ?? '').trim()
   const phone = String(student?.phone ?? '').trim()
@@ -558,7 +567,7 @@ export default function RecordingsSection({ canEditContent = false, course, isAd
       try {
         const loadedRecordings = await listRecordings(course.id)
         if (!ignore) {
-          setRecordings(loadedRecordings)
+          setRecordings(sortRecordingsOldestFirst(loadedRecordings))
           setLoadState({ loading: false, error: '' })
         }
       } catch (error) {
@@ -585,9 +594,11 @@ export default function RecordingsSection({ canEditContent = false, course, isAd
   function upsertRecording(recording) {
     setRecordings((current) => {
       const exists = current.some((item) => item.id === recording.id)
-      return exists
+      const nextRecordings = exists
         ? current.map((item) => (item.id === recording.id ? recording : item))
-        : [recording, ...current]
+        : [...current, recording]
+
+      return sortRecordingsOldestFirst(nextRecordings)
     })
     setActiveRecording((current) => (current?.id === recording.id ? recording : current))
   }
@@ -700,7 +711,7 @@ export default function RecordingsSection({ canEditContent = false, course, isAd
       ) : recordings.length === 0 ? (
         <EmptyState />
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div dir="rtl" className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {recordings.map((recording, index) => (
             <RecordingCard
               key={recording.id}

@@ -2079,7 +2079,7 @@ app.get('/api/recordings', requireDatabase, requireStudentCourseFromQuery, async
   }
 
   const result = await pool.query(
-    'SELECT * FROM marathon_recordings WHERE course_id = $1 ORDER BY created_at DESC',
+    'SELECT * FROM marathon_recordings WHERE course_id = $1 ORDER BY created_at ASC',
     [courseId],
   )
   const rows = await Promise.all(result.rows.map((row) => {
