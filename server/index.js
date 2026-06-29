@@ -1166,6 +1166,8 @@ async function ensureDb() {
           provider_asset_id text NOT NULL DEFAULT '',
           provider_playback_id text NOT NULL DEFAULT '',
           provider_upload_id text NOT NULL DEFAULT '',
+          external_url text NOT NULL DEFAULT '',
+          access_note text NOT NULL DEFAULT '',
           playback_policy text NOT NULL DEFAULT 'signed',
           date_label text NOT NULL DEFAULT '',
           duration_seconds integer NOT NULL DEFAULT 0,
@@ -1185,6 +1187,12 @@ async function ensureDb() {
 
         ALTER TABLE marathon_recordings
           ADD COLUMN IF NOT EXISTS provider_upload_id text NOT NULL DEFAULT '';
+
+        ALTER TABLE marathon_recordings
+          ADD COLUMN IF NOT EXISTS external_url text NOT NULL DEFAULT '';
+
+        ALTER TABLE marathon_recordings
+          ADD COLUMN IF NOT EXISTS access_note text NOT NULL DEFAULT '';
 
         ALTER TABLE marathon_recordings
           ADD COLUMN IF NOT EXISTS playback_policy text NOT NULL DEFAULT 'signed';
@@ -1377,6 +1385,8 @@ function serializeRecording(row, { includeProviderDetails = false } = {}) {
     recording.providerAssetId = row.provider_asset_id
     recording.providerPlaybackId = row.provider_playback_id
     recording.providerUploadId = row.provider_upload_id
+    recording.externalUrl = row.external_url
+    recording.accessNote = row.access_note
     recording.playbackPolicy = row.playback_policy
   }
 
@@ -1405,6 +1415,24 @@ function normalizeRecordingStatus(status) {
   if (normalizedStatus === 'created') return 'processing'
 
   return normalizedStatus || 'processing'
+}
+
+function parseHttpUrl(value, label = 'URL') {
+  const url = String(value ?? '').trim()
+  if (!url) return null
+
+  try {
+    const parsedUrl = new URL(url)
+    if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+      throw new Error(`${label} must be http or https`)
+    }
+
+    return parsedUrl.toString()
+  } catch (error) {
+    throw new Error(error.message === `${label} must be http or https`
+      ? error.message
+      : `${label} is invalid`, { cause: error })
+  }
 }
 
 async function updateRecordingFromMux(row) {
@@ -2097,7 +2125,9 @@ app.post('/api/recordings', requireDatabase, requireAdmin, asyncHandler(async (r
   const courseId = String(req.body?.courseId ?? '').trim()
   const title = String(req.body?.title ?? '').trim()
   const dateLabel = String(req.body?.dateLabel ?? '').trim()
-  const sourceUrl = String(req.body?.sourceUrl ?? '').trim()
+  const provider = String(req.body?.provider ?? 'mux').trim().toLowerCase()
+  const sourceUrl = String(req.body?.sourceUrl ?? req.body?.externalUrl ?? '').trim()
+  const accessNote = String(req.body?.accessNote ?? '').trim()
   let providerAssetId = String(req.body?.providerAssetId ?? req.body?.muxAssetId ?? '').trim()
   let providerPlaybackId = String(req.body?.providerPlaybackId ?? req.body?.muxPlaybackId ?? '').trim()
   let durationSeconds = Number(req.body?.durationSeconds ?? 0)
@@ -2108,21 +2138,60 @@ app.post('/api/recordings', requireDatabase, requireAdmin, asyncHandler(async (r
     return
   }
 
-  if (sourceUrl) {
-    let parsedUrl
+  if (provider === 'onedrive') {
+    let externalUrl
     try {
-      parsedUrl = new URL(sourceUrl)
-    } catch {
-      res.status(400).json({ error: 'Recording source URL is invalid' })
+      externalUrl = parseHttpUrl(sourceUrl, 'OneDrive URL')
+    } catch (error) {
+      res.status(400).json({ error: error.message })
       return
     }
 
-    if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
-      res.status(400).json({ error: 'Recording source URL must be http or https' })
+    if (!externalUrl) {
+      res.status(400).json({ error: 'OneDrive URL is required' })
       return
     }
 
-    const asset = await createMuxAssetFromUrl(sourceUrl)
+    if (!Number.isFinite(durationSeconds) || durationSeconds < 0) durationSeconds = 0
+
+    const result = await pool.query(
+      `INSERT INTO marathon_recordings
+         (id, course_id, title, provider, external_url, access_note, playback_policy,
+          date_label, duration_seconds, status)
+       VALUES ($1, $2, $3, 'onedrive', $4, $5, 'external', $6, $7, 'ready')
+       RETURNING *`,
+      [
+        `recording:${courseId}:${createId()}`,
+        courseId,
+        title,
+        externalUrl,
+        accessNote,
+        dateLabel,
+        Math.round(durationSeconds),
+      ],
+    )
+
+    await notifyContentChanged()
+
+    res.status(201).json({ recording: serializeRecording(result.rows[0], { includeProviderDetails: true }) })
+    return
+  }
+
+  if (provider !== 'mux') {
+    res.status(400).json({ error: 'Unsupported recording provider' })
+    return
+  }
+
+  if (sourceUrl) {
+    let muxImportUrl
+    try {
+      muxImportUrl = parseHttpUrl(sourceUrl, 'Recording source URL')
+    } catch (error) {
+      res.status(400).json({ error: error.message })
+      return
+    }
+
+    const asset = await createMuxAssetFromUrl(muxImportUrl)
     providerAssetId = asset.id ?? ''
     providerPlaybackId = firstMuxPlaybackId(asset)
     durationSeconds = muxAssetDurationSeconds(asset)
@@ -2178,9 +2247,11 @@ app.patch('/api/recordings/:id', requireDatabase, requireAdmin, asyncHandler(asy
   await ensureDb()
   const hasTitle = Object.hasOwn(req.body ?? {}, 'title')
   const hasDateLabel = Object.hasOwn(req.body ?? {}, 'dateLabel')
+  const hasAccessNote = Object.hasOwn(req.body ?? {}, 'accessNote')
   const hasDurationSeconds = Object.hasOwn(req.body ?? {}, 'durationSeconds')
   const title = hasTitle ? String(req.body.title ?? '').trim() : ''
   const dateLabel = hasDateLabel ? String(req.body.dateLabel ?? '').trim() : ''
+  const accessNote = hasAccessNote ? String(req.body.accessNote ?? '').trim() : ''
   const durationSeconds = Number(req.body?.durationSeconds ?? 0)
 
   if (hasTitle && !title) {
@@ -2197,7 +2268,8 @@ app.patch('/api/recordings/:id', requireDatabase, requireAdmin, asyncHandler(asy
     `UPDATE marathon_recordings
      SET title = CASE WHEN $2::boolean THEN $3 ELSE title END,
          date_label = CASE WHEN $4::boolean THEN $5 ELSE date_label END,
-         duration_seconds = CASE WHEN $6::boolean THEN $7 ELSE duration_seconds END,
+         access_note = CASE WHEN $6::boolean THEN $7 ELSE access_note END,
+         duration_seconds = CASE WHEN $8::boolean THEN $9 ELSE duration_seconds END,
          updated_at = now()
      WHERE id = $1
      RETURNING *`,
@@ -2207,6 +2279,8 @@ app.patch('/api/recordings/:id', requireDatabase, requireAdmin, asyncHandler(asy
       title,
       hasDateLabel,
       dateLabel,
+      hasAccessNote,
+      accessNote,
       hasDurationSeconds,
       Math.round(durationSeconds),
     ],
@@ -2243,6 +2317,26 @@ app.get('/api/recordings/:id/playback', requireDatabase, asyncHandler(async (req
 
   if (req.studentSession?.ipAddress && req.studentSession.ipAddress !== requestIp(req)) {
     res.status(409).json({ error: 'This session is already tied to another IP address' })
+    return
+  }
+
+  if (recording.provider === 'onedrive') {
+    if (!recording.external_url) {
+      res.status(409).json({ error: 'Recording link is missing' })
+      return
+    }
+
+    res.setHeader('Cache-Control', 'no-store')
+    res.json({
+      player: 'external',
+      provider: 'onedrive',
+      url: recording.external_url,
+      accessNote: recording.access_note,
+      viewer: {
+        name: req.student?.name ?? req.phoneAccess?.name ?? '',
+        phone: req.student?.phone ?? req.phoneAccess?.phone ?? '',
+      },
+    })
     return
   }
 

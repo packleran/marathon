@@ -62,7 +62,9 @@ If WhatsApp is not configured or Meta rejects the message, the student user is s
 
 If you do not want to use WhatsApp Business Platform, set `WHATSAPP_SEND_CREDENTIALS=false`. The admin UI still shows a `WhatsApp Web` button after creating a user or resetting a password; it opens WhatsApp Web with a prefilled message, and the admin sends it manually.
 
-Mux recordings are managed from the admin recordings tab. Direct uploads go from the browser to Mux, not through Railway. Playback on the student site is authorized through `/api/recordings/:id/playback`, which checks the existing student session and course access before returning short-lived signed Mux playback tokens.
+Recordings are managed from the admin recordings tab. Private-course recordings can use Mux: direct uploads go from the browser to Mux, not through Railway. Playback on the student site is authorized through `/api/recordings/:id/playback`, which checks the existing student session and course access before returning short-lived signed Mux playback tokens.
+
+For recordings that do not need Mux protection, such as university-hosted Microsoft Teams / OneDrive videos, the admin recordings tab also supports saving an external OneDrive link plus an optional password or note. The site still checks course access before showing the link, but the video itself is governed by Microsoft/OneDrive sharing settings.
 
 Add these variables to the admin service:
 

@@ -9,6 +9,7 @@ import {
   getRecordingPlayback,
   listRecordings,
   syncRecording,
+  updateRecording,
 } from '../studentAccess'
 
 const muxEnvKey = import.meta.env.VITE_MUX_ENV_KEY ?? ''
@@ -36,6 +37,13 @@ function statusText(status) {
     default:
       return status ? 'בעיבוד' : ''
   }
+}
+
+function providerText(provider) {
+  if (provider === 'onedrive') return 'OneDrive'
+  if (provider === 'mux') return 'Mux'
+
+  return ''
 }
 
 function formatViewerLabel(student) {
@@ -137,16 +145,45 @@ function AdminRecordingPanel({ canEditContent, courseId, onCreated, onDeleted, o
     title: '',
     dateLabel: '',
     sourceUrl: '',
+    accessNote: '',
     providerAssetId: '',
     providerPlaybackId: '',
   })
   const [activeUpload, setActiveUpload] = useState(null)
+  const [editingRecordingId, setEditingRecordingId] = useState('')
+  const [editForm, setEditForm] = useState({ title: '', dateLabel: '', accessNote: '' })
   const [status, setStatus] = useState(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isEditing, setIsEditing] = useState(false)
 
   function updateField(field, value) {
     setForm((current) => ({ ...current, [field]: value }))
   }
+
+  function updateEditField(field, value) {
+    setEditForm((current) => ({ ...current, [field]: value }))
+  }
+
+  function startEditing(recording) {
+    setEditingRecordingId(recording.id)
+    setEditForm({
+      title: recording.title ?? '',
+      dateLabel: recording.dateLabel ?? recording.date ?? '',
+      accessNote: recording.accessNote ?? '',
+    })
+    setStatus(null)
+  }
+
+  function stopEditing() {
+    setEditingRecordingId('')
+    setEditForm({ title: '', dateLabel: '', accessNote: '' })
+  }
+
+  const canSubmit = canEditContent &&
+    !isSubmitting &&
+    Boolean(form.title.trim()) &&
+    (mode !== 'onedrive' || Boolean(form.sourceUrl.trim())) &&
+    (mode !== 'existing' || Boolean(form.providerAssetId.trim() || form.providerPlaybackId.trim()))
 
   async function handleSubmit(event) {
     event.preventDefault()
@@ -165,14 +202,25 @@ function AdminRecordingPanel({ canEditContent, courseId, onCreated, onDeleted, o
         setActiveUpload({ recording: data.recording, uploadUrl: data.uploadUrl })
         onCreated(data.recording)
         setStatus({ type: 'success', text: 'נוצרה העלאה ישירה ל-Mux' })
-      } else {
+      } else if (mode === 'onedrive') {
         const data = await createRecording({
+          provider: 'onedrive',
           courseId,
           title: form.title,
           dateLabel: form.dateLabel,
-          sourceUrl: mode === 'url' ? form.sourceUrl : '',
-          providerAssetId: mode === 'existing' ? form.providerAssetId : '',
-          providerPlaybackId: mode === 'existing' ? form.providerPlaybackId : '',
+          sourceUrl: form.sourceUrl,
+          accessNote: form.accessNote,
+        })
+        onCreated(data.recording)
+        setStatus({ type: 'success', text: 'קישור OneDrive נוסף' })
+      } else {
+        const data = await createRecording({
+          provider: 'mux',
+          courseId,
+          title: form.title,
+          dateLabel: form.dateLabel,
+          providerAssetId: form.providerAssetId,
+          providerPlaybackId: form.providerPlaybackId,
         })
         onCreated(data.recording)
         setStatus({ type: 'success', text: 'ההקלטה נוספה' })
@@ -182,6 +230,7 @@ function AdminRecordingPanel({ canEditContent, courseId, onCreated, onDeleted, o
         title: '',
         dateLabel: '',
         sourceUrl: '',
+        accessNote: '',
         providerAssetId: '',
         providerPlaybackId: '',
       })
@@ -216,16 +265,44 @@ function AdminRecordingPanel({ canEditContent, courseId, onCreated, onDeleted, o
     }
   }
 
+  async function handleSaveEdit(event, recording) {
+    event.preventDefault()
+    if (!canEditContent || !editForm.title.trim()) return
+
+    setStatus(null)
+    setIsEditing(true)
+
+    try {
+      const updates = {
+        title: editForm.title,
+        dateLabel: editForm.dateLabel,
+      }
+
+      if (recording.provider === 'onedrive') {
+        updates.accessNote = editForm.accessNote
+      }
+
+      const data = await updateRecording(recording.id, updates)
+      onSynced(data.recording)
+      stopEditing()
+      setStatus({ type: 'success', text: 'ההקלטה עודכנה' })
+    } catch (error) {
+      setStatus({ type: 'error', text: error.message })
+    } finally {
+      setIsEditing(false)
+    }
+  }
+
   return (
     <div className="mb-6 rounded-2xl border border-border-subtle bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-base font-semibold text-text">העלאת הקלטה ל-Mux</h2>
+          <h2 className="text-base font-semibold text-text">הוספת הקלטה</h2>
         </div>
         <div className="flex w-fit items-center gap-1 rounded-lg border border-border bg-inset p-1">
           {[
-            { key: 'upload', label: 'מהמחשב' },
-            { key: 'url', label: 'ייבוא URL' },
+            { key: 'upload', label: 'Mux מהמחשב' },
+            { key: 'onedrive', label: 'קישור OneDrive' },
             { key: 'existing', label: 'Mux קיים' },
           ].map((item) => (
             <button
@@ -267,15 +344,26 @@ function AdminRecordingPanel({ canEditContent, courseId, onCreated, onDeleted, o
             </label>
           </div>
 
-          {mode === 'url' && (
+          {mode === 'onedrive' && (
             <label className="mt-3 block text-xs font-semibold text-text-muted uppercase tracking-wider">
-              URL נגיש ל-Mux
+              קישור OneDrive / Teams
               <input
                 dir="ltr"
                 type="url"
                 value={form.sourceUrl}
                 onChange={(event) => updateField('sourceUrl', event.target.value)}
                 className="mt-1.5 w-full rounded-xl border border-border bg-white px-3 py-2 text-left text-sm font-normal text-text outline-none focus:border-primary focus:ring-2 focus:ring-primary-soft"
+              />
+            </label>
+          )}
+
+          {mode === 'onedrive' && (
+            <label className="mt-3 block text-xs font-semibold text-text-muted uppercase tracking-wider">
+              סיסמה / הערה
+              <input
+                value={form.accessNote}
+                onChange={(event) => updateField('accessNote', event.target.value)}
+                className="mt-1.5 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm font-normal text-text outline-none focus:border-primary focus:ring-2 focus:ring-primary-soft"
               />
             </label>
           )}
@@ -313,7 +401,7 @@ function AdminRecordingPanel({ canEditContent, courseId, onCreated, onDeleted, o
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <button
             type="submit"
-            disabled={!canEditContent || isSubmitting || !form.title.trim()}
+            disabled={!canSubmit}
             className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
           >
             {mode === 'upload' ? 'המשך לבחירת קובץ' : 'הוסף הקלטה'}
@@ -350,34 +438,101 @@ function AdminRecordingPanel({ canEditContent, courseId, onCreated, onDeleted, o
 
       {recordings.length > 0 && (
         <div className="mt-5 overflow-hidden rounded-xl border border-border-subtle">
-          {recordings.map((recording) => (
-            <div key={recording.id} className="flex flex-col gap-3 border-b border-border-subtle bg-white px-4 py-3 last:border-b-0 sm:flex-row sm:items-center sm:justify-between">
-              <div className="min-w-0">
-                <div className="truncate text-sm font-semibold text-text">{recording.title}</div>
-                <div className="mt-1 flex flex-wrap gap-2 text-xs text-text-muted">
-                  <span>{statusText(recording.status)}</span>
-                  {recording.dateLabel && <span>{recording.dateLabel}</span>}
-                  {recording.duration && <span dir="ltr">{recording.duration}</span>}
-                </div>
+          {recordings.map((recording) => {
+            const isEditingCurrent = editingRecordingId === recording.id
+
+            return (
+              <div key={recording.id} className="border-b border-border-subtle bg-white px-4 py-3 last:border-b-0">
+                {isEditingCurrent ? (
+                  <form noValidate onSubmit={(event) => handleSaveEdit(event, recording)} className="grid gap-3">
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <label className="text-xs font-semibold text-text-muted uppercase tracking-wider">
+                        כותרת
+                        <input
+                          required
+                          value={editForm.title}
+                          onChange={(event) => updateEditField('title', event.target.value)}
+                          className="mt-1.5 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm font-normal text-text outline-none focus:border-primary focus:ring-2 focus:ring-primary-soft"
+                        />
+                      </label>
+                      <label className="text-xs font-semibold text-text-muted uppercase tracking-wider">
+                        תאריך/תיאור קצר
+                        <input
+                          value={editForm.dateLabel}
+                          onChange={(event) => updateEditField('dateLabel', event.target.value)}
+                          className="mt-1.5 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm font-normal text-text outline-none focus:border-primary focus:ring-2 focus:ring-primary-soft"
+                        />
+                      </label>
+                    </div>
+                    {recording.provider === 'onedrive' && (
+                      <label className="text-xs font-semibold text-text-muted uppercase tracking-wider">
+                        סיסמה / הערה
+                        <input
+                          value={editForm.accessNote}
+                          onChange={(event) => updateEditField('accessNote', event.target.value)}
+                          className="mt-1.5 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm font-normal text-text outline-none focus:border-primary focus:ring-2 focus:ring-primary-soft"
+                        />
+                      </label>
+                    )}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="submit"
+                        disabled={isEditing || !editForm.title.trim()}
+                        className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white shadow-sm transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+                      >
+                        שמור
+                      </button>
+                      <button
+                        type="button"
+                        onClick={stopEditing}
+                        disabled={isEditing}
+                        className="rounded-lg border border-border bg-white px-3 py-1.5 text-xs font-medium text-text-2 shadow-sm transition-colors hover:border-primary/40 hover:text-primary disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
+                      >
+                        ביטול
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-semibold text-text">{recording.title}</div>
+                      <div className="mt-1 flex flex-wrap gap-2 text-xs text-text-muted">
+                        {providerText(recording.provider) && <span>{providerText(recording.provider)}</span>}
+                        <span>{statusText(recording.status)}</span>
+                        {recording.dateLabel && <span>{recording.dateLabel}</span>}
+                        {recording.duration && <span dir="ltr">{recording.duration}</span>}
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => startEditing(recording)}
+                        className="rounded-lg border border-border bg-white px-3 py-1.5 text-xs font-medium text-text-2 shadow-sm transition-colors hover:border-primary/40 hover:text-primary cursor-pointer"
+                      >
+                        ערוך
+                      </button>
+                      {recording.provider === 'mux' && (
+                        <button
+                          type="button"
+                          onClick={() => handleSync(recording.id)}
+                          className="rounded-lg border border-border bg-white px-3 py-1.5 text-xs font-medium text-text-2 shadow-sm transition-colors hover:border-primary/40 hover:text-primary cursor-pointer"
+                        >
+                          רענן
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(recording)}
+                        className="rounded-lg border border-danger/20 bg-white px-3 py-1.5 text-xs font-medium text-danger shadow-sm transition-colors hover:border-danger/30 hover:bg-danger/10 cursor-pointer"
+                      >
+                        מחק
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleSync(recording.id)}
-                  className="rounded-lg border border-border bg-white px-3 py-1.5 text-xs font-medium text-text-2 shadow-sm transition-colors hover:border-primary/40 hover:text-primary cursor-pointer"
-                >
-                  רענן
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleDelete(recording)}
-                  className="rounded-lg border border-danger/20 bg-white px-3 py-1.5 text-xs font-medium text-danger shadow-sm transition-colors hover:border-danger/30 hover:bg-danger/10 cursor-pointer"
-                >
-                  מחק
-                </button>
-              </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>
@@ -434,6 +589,7 @@ export default function RecordingsSection({ canEditContent = false, course, isAd
         ? current.map((item) => (item.id === recording.id ? recording : item))
         : [recording, ...current]
     })
+    setActiveRecording((current) => (current?.id === recording.id ? recording : current))
   }
 
   function removeRecording(recordingId) {
@@ -472,41 +628,62 @@ export default function RecordingsSection({ canEditContent = false, course, isAd
       )}
 
       {activeRecording && (
-        <div className="mb-5 overflow-hidden rounded-2xl border border-border bg-[#11131f] shadow-sm">
-          <div className="border-b border-white/10 px-4 py-3">
-            <div className="text-sm font-semibold text-white">{activeRecording.title}</div>
+        <div className="mb-5 overflow-hidden rounded-2xl border border-border bg-white shadow-sm">
+          <div className="border-b border-border px-4 py-3">
+            <div className="text-sm font-semibold text-text">{activeRecording.title}</div>
             {playbackState.error && (
-              <div className="mt-1 text-xs text-red-200">{playbackState.error}</div>
+              <div className="mt-1 text-xs text-danger">{playbackState.error}</div>
             )}
           </div>
-          <div className="relative aspect-video bg-black">
-            {playbackState.loading && (
-              <div className="absolute inset-0 grid place-items-center text-sm font-semibold text-white/70">
-                טוען נגן...
+          {playback?.player === 'external' ? (
+            <div className="p-5">
+              <div className="rounded-xl border border-border bg-inset p-4">
+                <div className="text-sm font-semibold text-text">צפייה ב-OneDrive / Teams</div>
+                {playback.accessNote && (
+                  <div className="mt-2 rounded-lg border border-border bg-white px-3 py-2 text-sm text-text-2">
+                    {playback.accessNote}
+                  </div>
+                )}
+                <a
+                  href={playback.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-4 inline-flex rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-primary-hover"
+                >
+                  פתח קישור
+                </a>
               </div>
-            )}
-            {playback?.player === 'mux' && (
-              <>
-                <MuxPlayer
-                  playbackId={playback.playbackId}
-                  tokens={playback.tokens}
-                  envKey={playback.envKey || muxEnvKey || undefined}
-                  metadataVideoId={activeRecording.id}
-                  metadataVideoTitle={activeRecording.title}
-                  metadataViewerUserId={viewer.phone || viewer.name || undefined}
-                  streamType="on-demand"
-                  accentColor={accent.accent}
-                  style={{
-                    display: 'block',
-                    height: '100%',
-                    width: '100%',
-                    '--media-object-fit': 'contain',
-                  }}
-                />
-                <RecordingWatermark student={viewer} />
-              </>
-            )}
-          </div>
+            </div>
+          ) : (
+            <div className="relative aspect-video bg-black">
+              {playbackState.loading && (
+                <div className="absolute inset-0 grid place-items-center text-sm font-semibold text-white/70">
+                  טוען נגן...
+                </div>
+              )}
+              {playback?.player === 'mux' && (
+                <>
+                  <MuxPlayer
+                    playbackId={playback.playbackId}
+                    tokens={playback.tokens}
+                    envKey={playback.envKey || muxEnvKey || undefined}
+                    metadataVideoId={activeRecording.id}
+                    metadataVideoTitle={activeRecording.title}
+                    metadataViewerUserId={viewer.phone || viewer.name || undefined}
+                    streamType="on-demand"
+                    accentColor={accent.accent}
+                    style={{
+                      display: 'block',
+                      height: '100%',
+                      width: '100%',
+                      '--media-object-fit': 'contain',
+                    }}
+                  />
+                  <RecordingWatermark student={viewer} />
+                </>
+              )}
+            </div>
+          )}
         </div>
       )}
 
