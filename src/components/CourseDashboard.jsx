@@ -410,7 +410,6 @@ function CourseEditor({
     subtitle: course.subtitle,
     nextSession: toDatetimeLocal(course.nextSession),
     approvedPhones: formatPhoneList(course.approvedPhones),
-    recordings: formatJson(course.recordings),
     deadlines: formatJson(course.deadlines),
     resources: formatJson(course.resources),
   })
@@ -424,12 +423,10 @@ function CourseEditor({
     event.preventDefault()
     if (!canEditContent) return
 
-    let recordings
     let deadlines
     let resources
 
     try {
-      recordings = parseJsonArray('הקלטות', form.recordings)
       deadlines = parseJsonArray('תאריכים חשובים', form.deadlines)
       resources = parseJsonArray('קישורים מהירים', form.resources)
     } catch (error) {
@@ -442,7 +439,6 @@ function CourseEditor({
       subtitle: form.subtitle.trim(),
       nextSession: form.nextSession,
       ...(isPhoneLoginGroup ? { approvedPhones: normalizePhoneList(form.approvedPhones) } : {}),
-      recordings,
       deadlines,
       resources,
     })
@@ -501,19 +497,9 @@ function CourseEditor({
         </div>
         <details className="mt-4 rounded-xl border border-border-subtle bg-white p-4">
           <summary className="cursor-pointer text-xs font-semibold text-text-muted">
-            עריכה מתקדמת: הקלטות, תאריכים וקישורים
+            עריכה מתקדמת: תאריכים וקישורים
           </summary>
-          <div className="mt-4 grid gap-3 lg:grid-cols-3">
-            <label className="text-xs font-semibold text-text-muted uppercase tracking-wider">
-              הקלטות
-              <textarea
-                dir="ltr"
-                value={form.recordings}
-                onChange={(event) => updateField('recordings', event.target.value)}
-                rows={10}
-                className="mt-1.5 w-full resize-y rounded-xl border border-border bg-white px-3 py-2 text-xs font-mono font-normal leading-relaxed text-text outline-none focus:border-primary focus:ring-2 focus:ring-primary-soft"
-              />
-            </label>
+          <div className="mt-4 grid gap-3 lg:grid-cols-2">
             <label className="text-xs font-semibold text-text-muted uppercase tracking-wider">
               תאריכים חשובים
               <textarea
@@ -1026,7 +1012,14 @@ export default function CourseDashboard() {
                 refreshToken={remoteRefreshToken}
               />
             )}
-            {activeContent === 'recordings' && <RecordingsSection course={course} />}
+            {activeContent === 'recordings' && (
+              <RecordingsSection
+                canEditContent={IS_ADMIN_DEPLOYMENT && isAdminMode}
+                course={course}
+                isAdminMode={isAdminMode}
+                student={studentSession}
+              />
+            )}
           </div>
           <Sidebar course={course} />
         </div>

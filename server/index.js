@@ -1,7 +1,7 @@
 import express from 'express'
 import multer from 'multer'
 import path from 'node:path'
-import { createHash, createHmac, randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto'
+import { createHash, createHmac, createSign, randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import pg from 'pg'
@@ -51,6 +51,14 @@ const whatsAppPhoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID ?? ''
 const whatsAppAccessToken = process.env.WHATSAPP_ACCESS_TOKEN ?? ''
 const whatsAppTemplateName = process.env.WHATSAPP_TEMPLATE_NAME ?? 'student_login_details'
 const whatsAppTemplateLanguage = process.env.WHATSAPP_TEMPLATE_LANGUAGE ?? 'he'
+const muxTokenId = process.env.MUX_TOKEN_ID ?? ''
+const muxTokenSecret = process.env.MUX_TOKEN_SECRET ?? ''
+const muxSigningKeyId = process.env.MUX_SIGNING_KEY_ID ?? ''
+const muxSigningPrivateKey = process.env.MUX_SIGNING_PRIVATE_KEY ?? ''
+const muxEnvKey = process.env.MUX_ENV_KEY ?? process.env.VITE_MUX_ENV_KEY ?? ''
+const muxPlaybackRestrictionId = process.env.MUX_PLAYBACK_RESTRICTION_ID ?? ''
+const muxDirectUploadCorsOrigin = process.env.MUX_DIRECT_UPLOAD_CORS_ORIGIN ?? ''
+const muxPlaybackTokenSeconds = Number(process.env.MUX_PLAYBACK_TOKEN_SECONDS ?? 4 * 60 * 60)
 const passwordScryptOptions = { N: 16384, r: 8, p: 1, maxmem: 32 * 1024 * 1024 }
 const pool = databaseUrl
   ? new Pool({
@@ -319,6 +327,163 @@ function requestIp(req) {
 
 function requestUserAgent(req) {
   return String(req.headers['user-agent'] ?? '').slice(0, 500)
+}
+
+function isMuxApiConfigured() {
+  return Boolean(muxTokenId && muxTokenSecret)
+}
+
+function isMuxSigningConfigured() {
+  return Boolean(muxSigningKeyId && muxSigningPrivateKey)
+}
+
+function muxAuthorizationHeader() {
+  return `Basic ${Buffer.from(`${muxTokenId}:${muxTokenSecret}`).toString('base64')}`
+}
+
+async function muxApi(pathname, options = {}) {
+  if (!isMuxApiConfigured()) {
+    throw new Error('Mux API credentials are not configured')
+  }
+
+  const headers = {
+    Authorization: muxAuthorizationHeader(),
+    ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+    ...(options.headers ?? {}),
+  }
+
+  const response = await fetch(`https://api.mux.com${pathname}`, {
+    method: options.method ?? 'GET',
+    headers,
+    body: options.body ? JSON.stringify(options.body) : undefined,
+  })
+  const data = await response.json().catch(() => ({}))
+
+  if (!response.ok) {
+    const message = data.error?.messages?.join(', ') || data.error?.message || `Mux request failed with ${response.status}`
+    throw new Error(message)
+  }
+
+  return data.data
+}
+
+function getRequestOrigin(req) {
+  if (muxDirectUploadCorsOrigin) return muxDirectUploadCorsOrigin
+  if (req.headers.origin) return String(req.headers.origin)
+
+  const proto = req.headers['x-forwarded-proto'] ?? req.protocol
+  const host = req.headers['x-forwarded-host'] ?? req.headers.host
+  return `${proto}://${host}`
+}
+
+async function createMuxDirectUpload(req) {
+  return muxApi('/video/v1/uploads', {
+    method: 'POST',
+    body: {
+      cors_origin: getRequestOrigin(req),
+      new_asset_settings: {
+        playback_policies: ['signed'],
+        video_quality: 'basic',
+      },
+    },
+  })
+}
+
+async function createMuxAssetFromUrl(sourceUrl) {
+  return muxApi('/video/v1/assets', {
+    method: 'POST',
+    body: {
+      input: sourceUrl,
+      playback_policies: ['signed'],
+      video_quality: 'basic',
+    },
+  })
+}
+
+async function getMuxAsset(assetId) {
+  if (!assetId) return null
+  return muxApi(`/video/v1/assets/${encodeURIComponent(assetId)}`)
+}
+
+async function getMuxUpload(uploadId) {
+  if (!uploadId) return null
+  return muxApi(`/video/v1/uploads/${encodeURIComponent(uploadId)}`)
+}
+
+function firstMuxPlaybackId(asset) {
+  return asset?.playback_ids?.[0]?.id ?? ''
+}
+
+function muxAssetDurationSeconds(asset) {
+  const duration = Number(asset?.duration ?? 0)
+  return Number.isFinite(duration) && duration > 0 ? Math.round(duration) : 0
+}
+
+function normalizeMuxPrivateKey(value) {
+  const rawValue = String(value ?? '').trim()
+  if (!rawValue) return ''
+
+  const withLineBreaks = rawValue.replace(/\\n/g, '\n')
+  if (withLineBreaks.includes('BEGIN')) return withLineBreaks
+
+  try {
+    const decoded = Buffer.from(rawValue, 'base64').toString('utf8').replace(/\\n/g, '\n')
+    if (decoded.includes('BEGIN')) return decoded
+  } catch {
+    // Keep the original value below so the crypto layer returns a useful error.
+  }
+
+  return withLineBreaks
+}
+
+function base64urlJson(value) {
+  return Buffer.from(JSON.stringify(value)).toString('base64url')
+}
+
+function signMuxJwt(payload) {
+  if (!isMuxSigningConfigured()) {
+    throw new Error('Mux signing key is not configured')
+  }
+
+  const header = {
+    alg: 'RS256',
+    typ: 'JWT',
+    kid: muxSigningKeyId,
+  }
+  const unsignedToken = `${base64urlJson(header)}.${base64urlJson(payload)}`
+  const signer = createSign('RSA-SHA256')
+  signer.update(unsignedToken)
+  signer.end()
+
+  const signature = signer.sign(normalizeMuxPrivateKey(muxSigningPrivateKey)).toString('base64url')
+  return `${unsignedToken}.${signature}`
+}
+
+function muxPlaybackTokenTtlSeconds(recording) {
+  const configuredSeconds = Number.isFinite(muxPlaybackTokenSeconds) && muxPlaybackTokenSeconds > 0
+    ? muxPlaybackTokenSeconds
+    : 4 * 60 * 60
+  const durationSeconds = Number(recording?.duration_seconds ?? recording?.durationSeconds ?? 0)
+  if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) return configuredSeconds
+
+  return Math.max(configuredSeconds, Math.ceil(durationSeconds) + 10 * 60)
+}
+
+function createMuxPlaybackToken(playbackId, audience, recording) {
+  const now = Math.floor(Date.now() / 1000)
+  const payload = {
+    sub: playbackId,
+    aud: audience,
+    exp: now + muxPlaybackTokenTtlSeconds(recording),
+    nbf: now - 5,
+    kid: muxSigningKeyId,
+  }
+
+  if (muxPlaybackRestrictionId) {
+    payload.playback_restriction_id = muxPlaybackRestrictionId
+  }
+
+  return signMuxJwt(payload)
 }
 
 function maskPhoneForLog(phone) {
@@ -827,7 +992,9 @@ async function getAuthenticatedStudent(req) {
 
   await ensureDb()
   const result = await pool.query(
-    `SELECT students.id, students.phone, students.name, students.active,
+    `SELECT sessions.id AS session_id, sessions.ip_address AS session_ip_address,
+            sessions.user_agent AS session_user_agent,
+            students.id, students.phone, students.name, students.active,
             students.course_ids,
             students.locked_device_id, students.locked_device_at,
             students.locked_device_ip_address, students.locked_device_user_agent,
@@ -842,6 +1009,12 @@ async function getAuthenticatedStudent(req) {
   )
 
   if (result.rowCount === 0) return null
+
+  req.studentSession = {
+    id: result.rows[0].session_id,
+    ipAddress: result.rows[0].session_ip_address ?? '',
+    userAgent: result.rows[0].session_user_agent ?? '',
+  }
 
   await pool.query(
     'UPDATE marathon_student_sessions SET last_seen_at = now() WHERE id = $1',
@@ -984,6 +1157,52 @@ async function ensureDb() {
 
         CREATE INDEX IF NOT EXISTS marathon_requests_meeting_key_idx
           ON marathon_requests (meeting_key);
+
+        CREATE TABLE IF NOT EXISTS marathon_recordings (
+          id text PRIMARY KEY,
+          course_id text NOT NULL,
+          title text NOT NULL,
+          provider text NOT NULL DEFAULT 'mux',
+          provider_asset_id text NOT NULL DEFAULT '',
+          provider_playback_id text NOT NULL DEFAULT '',
+          provider_upload_id text NOT NULL DEFAULT '',
+          playback_policy text NOT NULL DEFAULT 'signed',
+          date_label text NOT NULL DEFAULT '',
+          duration_seconds integer NOT NULL DEFAULT 0,
+          status text NOT NULL DEFAULT 'ready',
+          created_at timestamptz NOT NULL DEFAULT now(),
+          updated_at timestamptz NOT NULL DEFAULT now()
+        );
+
+        ALTER TABLE marathon_recordings
+          ADD COLUMN IF NOT EXISTS provider text NOT NULL DEFAULT 'mux';
+
+        ALTER TABLE marathon_recordings
+          ADD COLUMN IF NOT EXISTS provider_asset_id text NOT NULL DEFAULT '';
+
+        ALTER TABLE marathon_recordings
+          ADD COLUMN IF NOT EXISTS provider_playback_id text NOT NULL DEFAULT '';
+
+        ALTER TABLE marathon_recordings
+          ADD COLUMN IF NOT EXISTS provider_upload_id text NOT NULL DEFAULT '';
+
+        ALTER TABLE marathon_recordings
+          ADD COLUMN IF NOT EXISTS playback_policy text NOT NULL DEFAULT 'signed';
+
+        ALTER TABLE marathon_recordings
+          ADD COLUMN IF NOT EXISTS date_label text NOT NULL DEFAULT '';
+
+        ALTER TABLE marathon_recordings
+          ADD COLUMN IF NOT EXISTS duration_seconds integer NOT NULL DEFAULT 0;
+
+        ALTER TABLE marathon_recordings
+          ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'ready';
+
+        ALTER TABLE marathon_recordings
+          ADD COLUMN IF NOT EXISTS updated_at timestamptz NOT NULL DEFAULT now();
+
+        CREATE INDEX IF NOT EXISTS marathon_recordings_course_id_idx
+          ON marathon_recordings (course_id);
 
         CREATE TABLE IF NOT EXISTS marathon_students (
           id text PRIMARY KEY,
@@ -1137,6 +1356,111 @@ function serializeRequest(req, row) {
     fileUrl: hasFile ? publicUrl(req, `/api/requests/${encodePathPart(row.id)}/file`) : '',
     createdAt: row.created_at.toISOString(),
   }
+}
+
+function serializeRecording(row, { includeProviderDetails = false } = {}) {
+  const recording = {
+    id: row.id,
+    courseId: row.course_id,
+    title: row.title,
+    provider: row.provider,
+    date: row.date_label,
+    dateLabel: row.date_label,
+    duration: formatDuration(row.duration_seconds),
+    durationSeconds: row.duration_seconds,
+    status: row.status,
+    createdAt: row.created_at?.toISOString?.() ?? null,
+    updatedAt: row.updated_at?.toISOString?.() ?? null,
+  }
+
+  if (includeProviderDetails) {
+    recording.providerAssetId = row.provider_asset_id
+    recording.providerPlaybackId = row.provider_playback_id
+    recording.providerUploadId = row.provider_upload_id
+    recording.playbackPolicy = row.playback_policy
+  }
+
+  return recording
+}
+
+function formatDuration(totalSeconds) {
+  const seconds = Number(totalSeconds ?? 0)
+  if (!Number.isFinite(seconds) || seconds <= 0) return ''
+
+  const roundedSeconds = Math.round(seconds)
+  const hours = Math.floor(roundedSeconds / 3600)
+  const minutes = Math.floor((roundedSeconds % 3600) / 60)
+  const remainingSeconds = roundedSeconds % 60
+
+  return hours > 0
+    ? `${hours}:${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`
+    : `${minutes}:${String(remainingSeconds).padStart(2, '0')}`
+}
+
+function normalizeRecordingStatus(status) {
+  const normalizedStatus = String(status ?? '').trim().toLowerCase()
+  if (normalizedStatus === 'ready') return 'ready'
+  if (normalizedStatus === 'errored' || normalizedStatus === 'error') return 'errored'
+  if (normalizedStatus === 'waiting_upload') return 'waiting_upload'
+  if (normalizedStatus === 'created') return 'processing'
+
+  return normalizedStatus || 'processing'
+}
+
+async function updateRecordingFromMux(row) {
+  if (!row || row.provider !== 'mux' || !isMuxApiConfigured()) return row
+
+  let providerAssetId = row.provider_asset_id
+  let providerPlaybackId = row.provider_playback_id
+  let durationSeconds = Number(row.duration_seconds ?? 0)
+  let status = row.status
+
+  if (!providerAssetId && row.provider_upload_id) {
+    const upload = await getMuxUpload(row.provider_upload_id)
+    providerAssetId = upload?.asset_id ?? ''
+    status = providerAssetId ? 'processing' : 'waiting_upload'
+  }
+
+  if (providerAssetId) {
+    const asset = await getMuxAsset(providerAssetId)
+    providerPlaybackId = firstMuxPlaybackId(asset) || providerPlaybackId
+    durationSeconds = muxAssetDurationSeconds(asset) || durationSeconds
+    status = normalizeRecordingStatus(asset?.status)
+  }
+
+  if (
+    providerAssetId === row.provider_asset_id &&
+    providerPlaybackId === row.provider_playback_id &&
+    durationSeconds === Number(row.duration_seconds ?? 0) &&
+    status === row.status
+  ) {
+    return row
+  }
+
+  const result = await pool.query(
+    `UPDATE marathon_recordings
+     SET provider_asset_id = $2,
+         provider_playback_id = $3,
+         duration_seconds = $4,
+         status = $5,
+         updated_at = now()
+     WHERE id = $1
+     RETURNING *`,
+    [row.id, providerAssetId, providerPlaybackId, durationSeconds, status],
+  )
+
+  return result.rows[0] ?? row
+}
+
+async function getRecordingById(recordingId, { syncMux = false } = {}) {
+  await ensureDb()
+  const result = await pool.query('SELECT * FROM marathon_recordings WHERE id = $1', [recordingId])
+  if (result.rowCount === 0) return null
+
+  const row = result.rows[0]
+  if (!syncMux) return row
+
+  return updateRecordingFromMux(row).catch(() => row)
 }
 
 app.get('/api/health', (_req, res) => {
@@ -1715,6 +2039,239 @@ app.put('/api/content', requireDatabase, requireAdmin, asyncHandler(async (req, 
   res.json({
     overrides: result.rows[0].overrides,
     updatedAt: result.rows[0].updated_at.toISOString(),
+  })
+}))
+
+app.get('/api/recordings', requireDatabase, requireStudentCourseFromQuery, asyncHandler(async (req, res) => {
+  await ensureDb()
+  const courseId = String(req.query.courseId ?? '').trim()
+  if (!courseId) {
+    res.status(400).json({ error: 'Missing courseId' })
+    return
+  }
+
+  const result = await pool.query(
+    'SELECT * FROM marathon_recordings WHERE course_id = $1 ORDER BY created_at DESC',
+    [courseId],
+  )
+  const rows = await Promise.all(result.rows.map((row) => {
+    const shouldSyncMux = row.provider === 'mux' && (row.status !== 'ready' || !row.provider_playback_id)
+    return shouldSyncMux ? updateRecordingFromMux(row).catch(() => row) : row
+  }))
+
+  res.json({
+    recordings: rows.map((row) => serializeRecording(row, { includeProviderDetails: isAdminService })),
+  })
+}))
+
+app.post('/api/recordings/direct-upload', requireDatabase, requireAdmin, asyncHandler(async (req, res) => {
+  await ensureDb()
+  const courseId = String(req.body?.courseId ?? '').trim()
+  const title = String(req.body?.title ?? '').trim()
+  const dateLabel = String(req.body?.dateLabel ?? '').trim()
+
+  if (!courseId || !title) {
+    res.status(400).json({ error: 'Missing courseId or title' })
+    return
+  }
+
+  const uploadSession = await createMuxDirectUpload(req)
+  const result = await pool.query(
+    `INSERT INTO marathon_recordings
+       (id, course_id, title, provider, provider_upload_id, playback_policy, date_label, status)
+     VALUES ($1, $2, $3, 'mux', $4, 'signed', $5, 'waiting_upload')
+     RETURNING *`,
+    [`recording:${courseId}:${createId()}`, courseId, title, uploadSession.id ?? '', dateLabel],
+  )
+
+  await notifyContentChanged()
+
+  res.status(201).json({
+    recording: serializeRecording(result.rows[0], { includeProviderDetails: true }),
+    uploadUrl: uploadSession.url,
+  })
+}))
+
+app.post('/api/recordings', requireDatabase, requireAdmin, asyncHandler(async (req, res) => {
+  await ensureDb()
+  const courseId = String(req.body?.courseId ?? '').trim()
+  const title = String(req.body?.title ?? '').trim()
+  const dateLabel = String(req.body?.dateLabel ?? '').trim()
+  const sourceUrl = String(req.body?.sourceUrl ?? '').trim()
+  let providerAssetId = String(req.body?.providerAssetId ?? req.body?.muxAssetId ?? '').trim()
+  let providerPlaybackId = String(req.body?.providerPlaybackId ?? req.body?.muxPlaybackId ?? '').trim()
+  let durationSeconds = Number(req.body?.durationSeconds ?? 0)
+  let status = 'ready'
+
+  if (!courseId || !title) {
+    res.status(400).json({ error: 'Missing courseId or title' })
+    return
+  }
+
+  if (sourceUrl) {
+    let parsedUrl
+    try {
+      parsedUrl = new URL(sourceUrl)
+    } catch {
+      res.status(400).json({ error: 'Recording source URL is invalid' })
+      return
+    }
+
+    if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+      res.status(400).json({ error: 'Recording source URL must be http or https' })
+      return
+    }
+
+    const asset = await createMuxAssetFromUrl(sourceUrl)
+    providerAssetId = asset.id ?? ''
+    providerPlaybackId = firstMuxPlaybackId(asset)
+    durationSeconds = muxAssetDurationSeconds(asset)
+    status = normalizeRecordingStatus(asset.status)
+  } else if (providerAssetId && (!providerPlaybackId || durationSeconds <= 0)) {
+    const asset = await getMuxAsset(providerAssetId)
+    providerPlaybackId = providerPlaybackId || firstMuxPlaybackId(asset)
+    durationSeconds = durationSeconds > 0 ? durationSeconds : muxAssetDurationSeconds(asset)
+    status = normalizeRecordingStatus(asset?.status)
+  }
+
+  if (!providerAssetId && !providerPlaybackId) {
+    res.status(400).json({ error: 'Provide a sourceUrl, mux asset id, or mux playback id' })
+    return
+  }
+
+  if (!Number.isFinite(durationSeconds) || durationSeconds < 0) durationSeconds = 0
+
+  const result = await pool.query(
+    `INSERT INTO marathon_recordings
+       (id, course_id, title, provider, provider_asset_id, provider_playback_id, playback_policy,
+        date_label, duration_seconds, status)
+     VALUES ($1, $2, $3, 'mux', $4, $5, 'signed', $6, $7, $8)
+     RETURNING *`,
+    [
+      `recording:${courseId}:${createId()}`,
+      courseId,
+      title,
+      providerAssetId,
+      providerPlaybackId,
+      dateLabel,
+      Math.round(durationSeconds),
+      status,
+    ],
+  )
+
+  await notifyContentChanged()
+
+  res.status(201).json({ recording: serializeRecording(result.rows[0], { includeProviderDetails: true }) })
+}))
+
+app.post('/api/recordings/:id/sync', requireDatabase, requireAdmin, asyncHandler(async (req, res) => {
+  const recording = await getRecordingById(req.params.id, { syncMux: true })
+  if (!recording) {
+    res.status(404).json({ error: 'Recording not found' })
+    return
+  }
+
+  res.json({ recording: serializeRecording(recording, { includeProviderDetails: true }) })
+}))
+
+app.patch('/api/recordings/:id', requireDatabase, requireAdmin, asyncHandler(async (req, res) => {
+  await ensureDb()
+  const hasTitle = Object.hasOwn(req.body ?? {}, 'title')
+  const hasDateLabel = Object.hasOwn(req.body ?? {}, 'dateLabel')
+  const hasDurationSeconds = Object.hasOwn(req.body ?? {}, 'durationSeconds')
+  const title = hasTitle ? String(req.body.title ?? '').trim() : ''
+  const dateLabel = hasDateLabel ? String(req.body.dateLabel ?? '').trim() : ''
+  const durationSeconds = Number(req.body?.durationSeconds ?? 0)
+
+  if (hasTitle && !title) {
+    res.status(400).json({ error: 'Title cannot be empty' })
+    return
+  }
+
+  if (hasDurationSeconds && (!Number.isFinite(durationSeconds) || durationSeconds < 0)) {
+    res.status(400).json({ error: 'Duration must be a positive number' })
+    return
+  }
+
+  const result = await pool.query(
+    `UPDATE marathon_recordings
+     SET title = CASE WHEN $2::boolean THEN $3 ELSE title END,
+         date_label = CASE WHEN $4::boolean THEN $5 ELSE date_label END,
+         duration_seconds = CASE WHEN $6::boolean THEN $7 ELSE duration_seconds END,
+         updated_at = now()
+     WHERE id = $1
+     RETURNING *`,
+    [
+      req.params.id,
+      hasTitle,
+      title,
+      hasDateLabel,
+      dateLabel,
+      hasDurationSeconds,
+      Math.round(durationSeconds),
+    ],
+  )
+
+  if (result.rowCount === 0) {
+    res.status(404).json({ error: 'Recording not found' })
+    return
+  }
+
+  await notifyContentChanged()
+
+  res.json({ recording: serializeRecording(result.rows[0], { includeProviderDetails: true }) })
+}))
+
+app.delete('/api/recordings/:id', requireDatabase, requireAdmin, asyncHandler(async (req, res) => {
+  await ensureDb()
+  await pool.query('DELETE FROM marathon_recordings WHERE id = $1', [req.params.id])
+  await notifyContentChanged()
+  res.status(204).end()
+}))
+
+app.get('/api/recordings/:id/playback', requireDatabase, asyncHandler(async (req, res) => {
+  const recording = await getRecordingById(req.params.id, { syncMux: true })
+  if (!recording) {
+    res.status(404).json({ error: 'Recording not found' })
+    return
+  }
+
+  if (!studentCanAccessCourse(req, recording.course_id)) {
+    rejectStudentCourseAccess(res)
+    return
+  }
+
+  if (req.studentSession?.ipAddress && req.studentSession.ipAddress !== requestIp(req)) {
+    res.status(409).json({ error: 'This session is already tied to another IP address' })
+    return
+  }
+
+  if (recording.provider !== 'mux') {
+    res.status(400).json({ error: 'Unsupported recording provider' })
+    return
+  }
+
+  if (recording.status !== 'ready' || !recording.provider_playback_id) {
+    res.status(409).json({ error: 'Recording is not ready yet' })
+    return
+  }
+
+  const playbackId = recording.provider_playback_id
+  res.setHeader('Cache-Control', 'no-store')
+  res.json({
+    player: 'mux',
+    playbackId,
+    tokens: {
+      playback: createMuxPlaybackToken(playbackId, 'v', recording),
+      thumbnail: createMuxPlaybackToken(playbackId, 't', recording),
+      storyboard: createMuxPlaybackToken(playbackId, 's', recording),
+    },
+    envKey: muxEnvKey,
+    expiresInSeconds: muxPlaybackTokenTtlSeconds(recording),
+    viewer: {
+      name: req.student?.name ?? req.phoneAccess?.name ?? '',
+      phone: req.student?.phone ?? req.phoneAccess?.phone ?? '',
+    },
   })
 }))
 

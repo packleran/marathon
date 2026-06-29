@@ -62,6 +62,20 @@ If WhatsApp is not configured or Meta rejects the message, the student user is s
 
 If you do not want to use WhatsApp Business Platform, set `WHATSAPP_SEND_CREDENTIALS=false`. The admin UI still shows a `WhatsApp Web` button after creating a user or resetting a password; it opens WhatsApp Web with a prefilled message, and the admin sends it manually.
 
+Mux recordings are managed from the admin recordings tab. Direct uploads go from the browser to Mux, not through Railway. Playback on the student site is authorized through `/api/recordings/:id/playback`, which checks the existing student session and course access before returning short-lived signed Mux playback tokens.
+
+Add these variables to the admin service:
+
+```env
+MUX_TOKEN_ID=<mux-access-token-id>
+MUX_TOKEN_SECRET=<mux-access-token-secret>
+MUX_SIGNING_KEY_ID=<mux-signing-key-id>
+MUX_SIGNING_PRIVATE_KEY=<mux-signing-private-key>
+MUX_ENV_KEY=<mux-environment-key>
+```
+
+`MUX_DIRECT_UPLOAD_CORS_ORIGIN` is optional. Set it to the admin origin if you want to pin direct uploads to a specific domain.
+
 ### Student service variables
 
 ```env
@@ -73,6 +87,10 @@ STUDENT_AUTH_REQUIRED=true
 STUDENT_SESSION_DAYS=30
 STUDENT_PHONE_LOGIN_COURSE_IDS=computational
 STUDENT_PHONE_ACCESS_SECRET=<choose-a-long-random-secret>
+MUX_SIGNING_KEY_ID=<mux-signing-key-id>
+MUX_SIGNING_PRIVATE_KEY=<mux-signing-private-key>
+MUX_ENV_KEY=<mux-environment-key>
+VITE_MUX_ENV_KEY=<mux-environment-key>
 ```
 
 `APP_ROLE` protects the server API. `VITE_APP_ROLE` controls which UI is built.
@@ -84,3 +102,5 @@ Password-protected courses always enforce one active session per student. There 
 `STUDENT_PHONE_LOGIN_COURSE_IDS` is a comma-separated list of root course ids that use open group-choice login. Leave it empty to make every course require username and password again.
 
 `STUDENT_PHONE_ACCESS_SECRET` signs the group-choice access cookie. If omitted, the server falls back to another server-side secret, but setting it explicitly is recommended.
+
+`MUX_TOKEN_ID` and `MUX_TOKEN_SECRET` are needed only where recordings are created or synced with Mux. The student service only needs the signing key so it can generate playback tokens after authorization.

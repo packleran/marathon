@@ -103,3 +103,54 @@ export async function resetStudentDeviceLock(studentId) {
     method: 'POST',
   })
 }
+
+export async function listRecordings(courseId) {
+  const params = new URLSearchParams({ courseId: String(courseId) })
+  const data = await fetchJson(`/api/recordings?${params.toString()}`)
+  return data.recordings ?? []
+}
+
+export async function createRecordingDirectUpload({ courseId, title, dateLabel }) {
+  return fetchJson('/api/recordings/direct-upload', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ courseId, title, dateLabel }),
+  })
+}
+
+export async function createRecording(recording) {
+  return fetchJson('/api/recordings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(recording),
+  })
+}
+
+export async function updateRecording(recordingId, updates) {
+  return fetchJson(`/api/recordings/${encodeURIComponent(recordingId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  })
+}
+
+export async function syncRecording(recordingId) {
+  return fetchJson(`/api/recordings/${encodeURIComponent(recordingId)}/sync`, {
+    method: 'POST',
+  })
+}
+
+export async function deleteRecording(recordingId) {
+  const response = await fetch(apiUrl(`/api/recordings/${encodeURIComponent(recordingId)}`), {
+    method: 'DELETE',
+    credentials: 'include',
+  })
+
+  if (!response.ok && response.status !== 204) {
+    throw new Error(`Request failed with ${response.status}`)
+  }
+}
+
+export async function getRecordingPlayback(recordingId) {
+  return fetchJson(`/api/recordings/${encodeURIComponent(recordingId)}/playback`)
+}

@@ -89,11 +89,7 @@ export const courses = [
         },
       },
     ],
-    recordings: [
-      { id: 1, title: 'תכנון דינמי — Knapsack ו-LCS', date: '11 ביוני', duration: '2:34:00' },
-      { id: 2, title: 'Divide & Conquer — תרגול', date: '8 ביוני', duration: '1:52:00' },
-      { id: 3, title: 'פתרון בחינה 2025א — חלק א׳', date: '4 ביוני', duration: '2:10:00' },
-    ],
+    recordings: [],
     deadlines: [
       { id: 1, label: 'מועד א׳', date: '2026-07-10', display: '10 ביולי' },
       { id: 2, label: 'מועד ב׳', date: '2026-08-07', display: '7 באוגוסט' },
@@ -167,10 +163,7 @@ export const courses = [
         },
       },
     ],
-    recordings: [
-      { id: 1, title: 'הסתברות מותנית ובייס — תרגול', date: '12 ביוני', duration: '1:48:00' },
-      { id: 2, title: 'משתנים מקריים בדידים', date: '9 ביוני', duration: '2:05:00' },
-    ],
+    recordings: [],
     deadlines: [
       { id: 1, label: 'מועד א׳', date: '2026-07-06', display: '6 ביולי' },
       { id: 2, label: 'מועד ב׳', date: '2026-08-03', display: '3 באוגוסט' },
@@ -246,11 +239,7 @@ export const courses = [
         },
       },
     ],
-    recordings: [
-      { id: 1, title: 'אוטומטים — DFA, NFA והמרות', date: '13 ביוני', duration: '2:20:00' },
-      { id: 2, title: 'למת הניפוח — דוגמאות ותרגול', date: '10 ביוני', duration: '1:35:00' },
-      { id: 3, title: 'מכונות טיורינג — מבוא', date: '6 ביוני', duration: '1:55:00' },
-    ],
+    recordings: [],
     deadlines: [
       { id: 1, label: 'מועד א׳', date: '2026-07-12', display: '12 ביולי' },
       { id: 2, label: 'מועד ב׳', date: '2026-08-09', display: '9 באוגוסט' },
