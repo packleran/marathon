@@ -22,9 +22,9 @@ npm start
 
 The server serves `dist/` and exposes `/api/*` for shared content, uploads, and meeting requests.
 
-Student access is controlled from the admin UI. After a student pays, open the admin service, choose the student's course, add the student's phone number, and generate or set an initial password. The student site uses the phone number as the username and stores only a password hash in Postgres. Students in password-protected courses can have only one active session at a time; another browser or computer is blocked until the current session logs out, expires, or an admin disconnects active sessions. Students only see courses assigned to their account.
+Student access is controlled from the admin UI. After a student pays, open the admin service, choose the student's course, add the student's phone number, and generate or set an initial password. The student site uses the phone number as the username and stores only a password hash in Postgres. Students in password-protected courses can sign in from multiple browsers or devices at the same time. Students only see courses assigned to their account.
 
-Courses listed in `STUDENT_PHONE_LOGIN_COURSE_IDS` use open group-choice access on the student site and do not require a password, single-session enforcement, or a phone number. The default group-choice course is `computational` (`מודלים חישוביים`). The student entry screen offers the available Computational Models groups, such as `מודלים ראש קבוצה יובל` and `מודלים ראש קבוצה שחר`, and the selected group is the only course shown afterward.
+Courses listed in `STUDENT_PHONE_LOGIN_COURSE_IDS` use open group-choice access on the student site and do not require a password or a phone number. The default group-choice course is `computational` (`מודלים חישוביים`). The student entry screen offers the available Computational Models groups, such as `מודלים ראש קבוצה יובל` and `מודלים ראש קבוצה שחר`, and the selected group is the only course shown afterward.
 
 ## Railway layout
 
@@ -98,8 +98,6 @@ VITE_MUX_ENV_KEY=<mux-environment-key>
 `APP_ROLE` protects the server API. `VITE_APP_ROLE` controls which UI is built.
 
 `STUDENT_AUTH_REQUIRED=false` can temporarily disable the student login gate, but production should leave it enabled.
-
-Password-protected courses always enforce one active session per student. There is no permanent first-device lock; students can move to another computer after logging out or after an admin disconnects active sessions.
 
 `STUDENT_PHONE_LOGIN_COURSE_IDS` is a comma-separated list of root course ids that use open group-choice login. Leave it empty to make every course require username and password again.
 

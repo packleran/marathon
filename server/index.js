@@ -79,14 +79,6 @@ function isStudentAuthRequired() {
   return !isAdminService && Boolean(pool) && !disabledAuthValues.has(configured)
 }
 
-function isStudentSingleSessionRequired() {
-  return isStudentAuthRequired()
-}
-
-function isStudentSingleSessionRequiredForCourseIds(courseIds) {
-  return isStudentSingleSessionRequired() && !hasOnlyPhoneLoginCourses(courseIds)
-}
-
 function isWhatsAppConfigured() {
   return whatsAppCredentialsEnabled && Boolean(whatsAppPhoneNumberId && whatsAppAccessToken)
 }
@@ -1607,46 +1599,15 @@ app.post('/api/student-auth/login', requireDatabase, asyncHandler(async (req, re
 
   const currentIpAddress = requestIp(req)
   const currentUserAgent = requestUserAgent(req)
-  const shouldUseSingleSession = isStudentSingleSessionRequiredForCourseIds(studentRow.course_ids)
 
   const token = randomBytes(32).toString('base64url')
   const expiresAt = new Date(Date.now() + studentSessionDays * 24 * 60 * 60 * 1000)
-  const currentSessionToken = parseCookies(req)[studentSessionCookie]
-  const currentSessionId = currentSessionToken ? hashSessionToken(currentSessionToken) : ''
 
   const client = await pool.connect()
 
   try {
     await client.query('BEGIN')
-    await client.query('SELECT pg_advisory_xact_lock($1, hashtext($2))', [20260627, studentRow.id])
     await client.query('DELETE FROM marathon_student_sessions WHERE expires_at <= now()')
-
-    if (shouldUseSingleSession) {
-      const activeSessions = await client.query(
-        `SELECT id
-         FROM marathon_student_sessions
-         WHERE student_id = $1
-           AND expires_at > now()
-           AND id <> $2
-         LIMIT 1`,
-        [studentRow.id, currentSessionId],
-      )
-
-      if (activeSessions.rowCount > 0) {
-        await client.query('ROLLBACK')
-        console.warn('[student-auth/login] rejected', {
-          phone: maskedPhone,
-          reason: 'active_session_exists',
-          courseIds: normalizeCourseIds(studentRow.course_ids),
-        })
-        res.status(409).json({
-          error: 'המשתמש כבר מחובר ממכשיר אחר. צריך לצאת מהמכשיר הקודם או לבקש מהאדמין לנתק חיבורים פעילים.',
-        })
-        return
-      }
-
-      await client.query('DELETE FROM marathon_student_sessions WHERE student_id = $1', [studentRow.id])
-    }
 
     await client.query(
       `INSERT INTO marathon_student_sessions (id, student_id, expires_at, ip_address, user_agent)
@@ -2312,11 +2273,6 @@ app.get('/api/recordings/:id/playback', requireDatabase, asyncHandler(async (req
 
   if (!studentCanAccessCourse(req, recording.course_id)) {
     rejectStudentCourseAccess(res)
-    return
-  }
-
-  if (req.studentSession?.ipAddress && req.studentSession.ipAddress !== requestIp(req)) {
-    res.status(409).json({ error: 'This session is already tied to another IP address' })
     return
   }
 
