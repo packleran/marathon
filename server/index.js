@@ -368,26 +368,44 @@ async function muxApi(pathname, options = {}) {
   return data.data
 }
 
+function normalizeHttpOrigin(value) {
+  const rawValue = String(value ?? '').trim()
+  if (!rawValue) return ''
+
+  try {
+    return new URL(rawValue).origin
+  } catch {
+    return rawValue.replace(/\/+$/, '')
+  }
+}
+
 function getRequestOrigin(req) {
-  if (muxDirectUploadCorsOrigin) return muxDirectUploadCorsOrigin
-  if (req.headers.origin) return String(req.headers.origin)
+  const requestOrigin = normalizeHttpOrigin(req.headers.origin)
+  if (requestOrigin) return requestOrigin
+
+  const configuredOrigin = normalizeHttpOrigin(muxDirectUploadCorsOrigin)
+  if (configuredOrigin) return configuredOrigin
 
   const proto = req.headers['x-forwarded-proto'] ?? req.protocol
   const host = req.headers['x-forwarded-host'] ?? req.headers.host
-  return `${proto}://${host}`
+  return normalizeHttpOrigin(`${proto}://${host}`)
 }
 
 async function createMuxDirectUpload(req) {
+  const corsOrigin = getRequestOrigin(req)
   return muxApi('/video/v1/uploads', {
     method: 'POST',
     body: {
-      cors_origin: getRequestOrigin(req),
+      cors_origin: corsOrigin,
       new_asset_settings: {
         playback_policies: ['signed'],
         video_quality: 'basic',
       },
     },
-  })
+  }).then((uploadSession) => ({
+    ...uploadSession,
+    cors_origin: uploadSession?.cors_origin ?? corsOrigin,
+  }))
 }
 
 async function createMuxAssetFromUrl(sourceUrl) {
@@ -2097,6 +2115,7 @@ app.post('/api/recordings/direct-upload', requireDatabase, requireAdmin, asyncHa
   res.status(201).json({
     recording: serializeRecording(result.rows[0], { includeProviderDetails: true }),
     uploadUrl: uploadSession.url,
+    uploadOrigin: uploadSession.cors_origin,
   })
 }))
 

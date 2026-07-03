@@ -76,7 +76,7 @@ MUX_SIGNING_PRIVATE_KEY=<mux-signing-private-key>
 MUX_ENV_KEY=<mux-environment-key>
 ```
 
-`MUX_DIRECT_UPLOAD_CORS_ORIGIN` is optional. Set it to the admin origin if you want to pin direct uploads to a specific domain.
+`MUX_DIRECT_UPLOAD_CORS_ORIGIN` is optional and is only used as a fallback when the browser request does not send an `Origin` header. Direct uploads normally use the actual admin page origin so the Mux upload URL matches the browser that performs the upload.
 
 ### Student service variables
 

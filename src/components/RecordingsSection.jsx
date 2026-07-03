@@ -14,6 +14,21 @@ import {
 
 const muxEnvKey = import.meta.env.VITE_MUX_ENV_KEY ?? ''
 
+function browserOrigin() {
+  if (typeof window === 'undefined') return ''
+
+  return window.location.origin
+}
+
+function uploadErrorText(event) {
+  const message = String(event?.detail?.message ?? '').trim()
+  if (message.includes('Server responded with 0')) {
+    return 'ההעלאה נחסמה לפני שהתקבלה תשובת שרת. בדרך כלל זו בעיית CORS או חיבור רשת. צור העלאה חדשה ונסה שוב.'
+  }
+
+  return message || 'ההעלאה נכשלה'
+}
+
 function PlayIcon({ className = 'h-5 w-5' }) {
   return (
     <svg className={className} fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -208,7 +223,7 @@ function AdminRecordingPanel({ canEditContent, courseId, onCreated, onDeleted, o
           title: form.title,
           dateLabel: form.dateLabel,
         })
-        setActiveUpload({ recording: data.recording, uploadUrl: data.uploadUrl })
+        setActiveUpload({ recording: data.recording, uploadUrl: data.uploadUrl, uploadOrigin: data.uploadOrigin })
         onCreated(data.recording)
         setStatus({ type: 'success', text: 'נוצרה העלאה ישירה ל-Mux' })
       } else if (mode === 'mux-url') {
@@ -269,6 +284,10 @@ function AdminRecordingPanel({ canEditContent, courseId, onCreated, onDeleted, o
     } catch (error) {
       setStatus({ type: 'error', text: error.message })
     }
+  }
+
+  function handleUploadError(event) {
+    setStatus({ type: 'error', text: uploadErrorText(event) })
   }
 
   async function handleDelete(recording) {
@@ -452,12 +471,19 @@ function AdminRecordingPanel({ canEditContent, courseId, onCreated, onDeleted, o
           <div className="mb-3">
             <div className="text-sm font-semibold text-text">בחר או גרור קובץ וידאו</div>
             <div className="mt-1 text-xs text-text-muted">{activeUpload.recording.title}</div>
+            {activeUpload.uploadOrigin && activeUpload.uploadOrigin !== browserOrigin() && (
+              <div className="mt-1 text-xs text-danger">
+                מקור ההעלאה לא תואם לכתובת האתר הנוכחית.
+              </div>
+            )}
           </div>
           <div className="rounded-xl border border-dashed border-primary/35 bg-white p-4">
             <MuxUploader
               endpoint={activeUpload.uploadUrl}
               dynamicChunkSize
               pausable
+              onUploadStart={() => setStatus(null)}
+              onUploadError={handleUploadError}
               onSuccess={() => handleSync(activeUpload.recording.id)}
               style={{
                 '--progress-bar-fill-color': '#4c57d4',
