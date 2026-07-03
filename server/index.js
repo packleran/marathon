@@ -380,11 +380,11 @@ function normalizeHttpOrigin(value) {
 }
 
 function getRequestOrigin(req) {
-  const requestOrigin = normalizeHttpOrigin(req.headers.origin)
-  if (requestOrigin) return requestOrigin
-
   const configuredOrigin = normalizeHttpOrigin(muxDirectUploadCorsOrigin)
   if (configuredOrigin) return configuredOrigin
+
+  const requestOrigin = normalizeHttpOrigin(req.headers.origin)
+  if (requestOrigin) return requestOrigin
 
   const proto = req.headers['x-forwarded-proto'] ?? req.protocol
   const host = req.headers['x-forwarded-host'] ?? req.headers.host
