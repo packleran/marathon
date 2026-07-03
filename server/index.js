@@ -117,6 +117,10 @@ function rootCourseId(course) {
   return String(course?.sourceCourseId ?? course?.id ?? '').trim()
 }
 
+function courseText(course) {
+  return `${course?.name ?? ''} ${course?.subtitle ?? ''}`.trim()
+}
+
 function isPhoneLoginCourseId(courseId) {
   const normalizedCourseId = String(courseId ?? '').trim()
   if (studentPhoneLoginCourseIdSet.has(normalizedCourseId)) return true
@@ -124,8 +128,13 @@ function isPhoneLoginCourseId(courseId) {
   return studentPhoneLoginCourseIds.some((rootId) => normalizedCourseId.startsWith(`${rootId}-group-`))
 }
 
+function isAlgorithmBoostCourse(course) {
+  const courseId = String(course?.id ?? '').trim()
+  return rootCourseId(course) === 'algorithms' && courseId !== 'algorithms' && courseText(course).includes('תגבור')
+}
+
 function isPhoneLoginCourse(course) {
-  return isPhoneLoginCourseId(rootCourseId(course))
+  return isPhoneLoginCourseId(rootCourseId(course)) || isAlgorithmBoostCourse(course)
 }
 
 function hasOnlyPhoneLoginCourses(courseIds) {
@@ -690,6 +699,18 @@ function inferModelGroupLeader(course, index) {
 }
 
 function createPhoneLoginCourseOption(course, index) {
+  if (rootCourseId(course) === 'algorithms') {
+    const text = courseText(course)
+    const fallbackName = String(course.name ?? '').replace('תכנון אלגוריתמים', '').replace(/^[-–\s]+/, '').trim()
+
+    return {
+      id: String(course.id),
+      label: text.includes('תגבור') ? 'תגבור' : fallbackName || String(course.name ?? 'תכנון אלגוריתמים'),
+      name: String(course.name ?? ''),
+      sourceCourseId: String(course.sourceCourseId ?? course.id),
+    }
+  }
+
   const leader = inferModelGroupLeader(course, index)
 
   return {
@@ -1506,9 +1527,7 @@ app.get('/student-login', (req, res) => {
 app.get('/api/config', asyncHandler(async (req, res) => {
   const student = await getAuthenticatedStudent(req)
   const phoneAccess = student ? null : getAuthenticatedPhoneAccess(req)
-  const contentOverrides = studentPhoneLoginCourseIds.length > 0
-    ? await loadContentOverridesFromDatabase()
-    : {}
+  const contentOverrides = await loadContentOverridesFromDatabase()
 
   res.json({
     role: isAdminService ? 'admin' : 'student',
@@ -1704,7 +1723,7 @@ app.post('/api/student-auth/course-login', requireDatabase, asyncHandler(async (
   const course = getPhoneLoginCourseById(courseId, overrides)
   if (!course) {
     clearStudentPhoneAccessCookie(req, res)
-    res.status(404).json({ error: 'קבוצת המודלים שנבחרה לא נמצאה' })
+    res.status(404).json({ error: 'הקבוצה שנבחרה לא נמצאה' })
     return
   }
 

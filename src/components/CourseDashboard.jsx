@@ -41,6 +41,7 @@ const loginCourseOptions = [
   { id: 'computational', label: 'מודלים', mode: 'course-choice' },
   { id: 'probability', label: 'הסתברות', mode: 'password' },
   { id: 'algorithms', label: 'אלגוריתמים', mode: 'password' },
+  { id: 'algorithms-boost', label: 'תגבור', mode: 'course-choice', sourceCourseId: 'algorithms' },
 ]
 
 function toDatetimeLocal(value) {
@@ -259,28 +260,31 @@ function StudentAccountBar({ student, onLogout }) {
   )
 }
 
-function isPhoneLoginCourseId(courseId, phoneLoginCourseIds = new Set()) {
-  const normalizedCourseId = String(courseId ?? '')
-  if (phoneLoginCourseIds.has(normalizedCourseId)) return true
+function optionBelongsToCourse(option, course) {
+  const normalizedCourseId = String(course?.sourceCourseId ?? course?.id ?? '')
+  const sourceCourseId = String(option?.sourceCourseId ?? '')
+  const optionId = String(option?.id ?? '')
 
-  return [...phoneLoginCourseIds].some((rootId) => normalizedCourseId.startsWith(`${rootId}-group-`))
+  if (sourceCourseId) return sourceCourseId === normalizedCourseId
+
+  return optionId === normalizedCourseId || optionId.startsWith(`${normalizedCourseId}-group-`)
 }
 
-function StudentEntryPanel({ phoneLoginCourseIds, modelGroupOptions = [] }) {
+function StudentEntryPanel({ courseChoiceOptions = [] }) {
   const [selectedCourseId, setSelectedCourseId] = useState(loginCourseOptions[0].id)
-  const [selectedModelGroupId, setSelectedModelGroupId] = useState(modelGroupOptions[0]?.id ?? '')
+  const [selectedGroupId, setSelectedGroupId] = useState(courseChoiceOptions[0]?.id ?? '')
   const [status, setStatus] = useState(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const selectedCourse = loginCourseOptions.find((option) => option.id === selectedCourseId) ?? loginCourseOptions[0]
-  const canUseCourseChoice = selectedCourse.mode === 'course-choice' && isPhoneLoginCourseId(selectedCourse.id, phoneLoginCourseIds)
-  const availableModelGroupOptions = useMemo(() => (
-    modelGroupOptions.filter((option) => isPhoneLoginCourseId(option.id, phoneLoginCourseIds))
-  ), [modelGroupOptions, phoneLoginCourseIds])
-  const effectiveSelectedModelGroupId = availableModelGroupOptions.some((option) => (
-    option.id === selectedModelGroupId
+  const availableCourseChoiceOptions = useMemo(() => (
+    courseChoiceOptions.filter((option) => optionBelongsToCourse(option, selectedCourse))
+  ), [courseChoiceOptions, selectedCourse])
+  const canUseCourseChoice = selectedCourse.mode === 'course-choice' && availableCourseChoiceOptions.length > 0
+  const effectiveSelectedGroupId = availableCourseChoiceOptions.some((option) => (
+    option.id === selectedGroupId
   ))
-    ? selectedModelGroupId
-    : availableModelGroupOptions[0]?.id ?? ''
+    ? selectedGroupId
+    : availableCourseChoiceOptions[0]?.id ?? ''
 
   async function handleSubmit(event) {
     event.preventDefault()
@@ -291,15 +295,15 @@ function StudentEntryPanel({ phoneLoginCourseIds, modelGroupOptions = [] }) {
       return
     }
 
-    if (!effectiveSelectedModelGroupId) {
-      setStatus({ type: 'error', text: 'צריך לבחור קבוצת מודלים' })
+    if (!effectiveSelectedGroupId) {
+      setStatus({ type: 'error', text: 'צריך לבחור קבוצה' })
       return
     }
 
     setIsSubmitting(true)
 
     try {
-      await loginWithCourseChoice(effectiveSelectedModelGroupId)
+      await loginWithCourseChoice(effectiveSelectedGroupId)
       window.location.assign('/')
     } catch (error) {
       setStatus({ type: 'error', text: error.message })
@@ -315,7 +319,7 @@ function StudentEntryPanel({ phoneLoginCourseIds, modelGroupOptions = [] }) {
         className="w-full max-w-md rounded-2xl border border-border bg-white p-6 text-right shadow-[0_12px_32px_rgba(20,23,38,0.08)]"
       >
         <h1 className="text-xl font-semibold text-text">כניסה לאתר הסטודנטים</h1>
-        <div className="mt-5 grid grid-cols-3 gap-1 rounded-xl border border-border bg-inset p-1">
+        <div className="mt-5 grid grid-cols-2 gap-1 rounded-xl border border-border bg-inset p-1 sm:grid-cols-4">
           {loginCourseOptions.map((option) => {
             const isSelected = option.id === selectedCourse.id
             return (
@@ -337,20 +341,20 @@ function StudentEntryPanel({ phoneLoginCourseIds, modelGroupOptions = [] }) {
             )
           })}
         </div>
-        {canUseCourseChoice ? (
+        {selectedCourse.mode === 'course-choice' ? (
           <div className="mt-5">
             <div className="text-xs font-semibold uppercase tracking-wider text-text-muted">
-              בחירת קבוצת מודלים
+              בחירת קבוצה
             </div>
             <div className="mt-2 grid gap-2">
-              {availableModelGroupOptions.map((option) => {
-                const isSelected = option.id === effectiveSelectedModelGroupId
+              {availableCourseChoiceOptions.map((option) => {
+                const isSelected = option.id === effectiveSelectedGroupId
                 return (
                   <button
                     key={option.id}
                     type="button"
                     onClick={() => {
-                      setSelectedModelGroupId(option.id)
+                      setSelectedGroupId(option.id)
                       setStatus(null)
                     }}
                     className={`rounded-xl border px-3 py-3 text-right text-sm font-semibold transition-colors cursor-pointer ${
@@ -363,9 +367,9 @@ function StudentEntryPanel({ phoneLoginCourseIds, modelGroupOptions = [] }) {
                   </button>
                 )
               })}
-              {availableModelGroupOptions.length === 0 && (
+              {availableCourseChoiceOptions.length === 0 && (
                 <div className="rounded-xl border border-border bg-inset px-3 py-3 text-sm font-medium text-text-muted">
-                  אין כרגע קבוצות מודלים זמינות.
+                  אין כרגע קבוצות זמינות.
                 </div>
               )}
             </div>
@@ -377,10 +381,10 @@ function StudentEntryPanel({ phoneLoginCourseIds, modelGroupOptions = [] }) {
         )}
         <button
           type="submit"
-          disabled={isSubmitting || (canUseCourseChoice && availableModelGroupOptions.length === 0)}
+          disabled={isSubmitting || (selectedCourse.mode === 'course-choice' && availableCourseChoiceOptions.length === 0)}
           className="mt-5 w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
         >
-          {canUseCourseChoice ? 'כניסה לקבוצה' : 'המשך לכניסה עם סיסמה'}
+          {selectedCourse.mode === 'course-choice' ? 'כניסה לקבוצה' : 'המשך לכניסה עם סיסמה'}
         </button>
         {status && (
           <div className="mt-4 text-sm text-danger" role="alert">
@@ -890,11 +894,14 @@ export default function CourseDashboard() {
     )
   }
 
-  if (!IS_ADMIN_DEPLOYMENT && !studentSession && phoneLoginCourseIds.size > 0) {
+  if (
+    !IS_ADMIN_DEPLOYMENT &&
+    !studentSession &&
+    (phoneLoginCourseIds.size > 0 || (appConfig?.modelGroupOptions?.length ?? 0) > 0)
+  ) {
     return (
       <StudentEntryPanel
-        phoneLoginCourseIds={phoneLoginCourseIds}
-        modelGroupOptions={appConfig?.modelGroupOptions ?? []}
+        courseChoiceOptions={appConfig?.modelGroupOptions ?? []}
       />
     )
   }

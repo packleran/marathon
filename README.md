@@ -24,7 +24,7 @@ The server serves `dist/` and exposes `/api/*` for shared content, uploads, and 
 
 Student access is controlled from the admin UI. After a student pays, open the admin service, choose the student's course, add the student's phone number, and generate or set an initial password. The student site uses the phone number as the username and stores only a password hash in Postgres. Students in password-protected courses can sign in from multiple browsers or devices at the same time. Students only see courses assigned to their account.
 
-Courses listed in `STUDENT_PHONE_LOGIN_COURSE_IDS` use open group-choice access on the student site and do not require a password or a phone number. The default group-choice course is `computational` (`מודלים חישוביים`). The student entry screen offers the available Computational Models groups, such as `מודלים ראש קבוצה יובל` and `מודלים ראש קבוצה שחר`, and the selected group is the only course shown afterward.
+Courses listed in `STUDENT_PHONE_LOGIN_COURSE_IDS` use open group-choice access on the student site and do not require a password or a phone number. The default group-choice course is `computational` (`מודלים חישוביים`). The student entry screen offers the available Computational Models groups, such as `מודלים ראש קבוצה יובל` and `מודלים ראש קבוצה שחר`, and also exposes an Algorithms `תגבור` group when a custom Algorithms course includes `תגבור` in its name. The selected group is the only course shown afterward.
 
 ## Railway layout
 
@@ -62,7 +62,7 @@ If WhatsApp is not configured or Meta rejects the message, the student user is s
 
 If you do not want to use WhatsApp Business Platform, set `WHATSAPP_SEND_CREDENTIALS=false`. The admin UI still shows a `WhatsApp Web` button after creating a user or resetting a password; it opens WhatsApp Web with a prefilled message, and the admin sends it manually.
 
-Recordings are managed from the admin recordings tab. Private-course recordings can use Mux: direct uploads go from the browser to Mux, not through Railway. Playback on the student site is authorized through `/api/recordings/:id/playback`, which checks the existing student session and course access before returning short-lived signed Mux playback tokens.
+Recordings are managed from the admin recordings tab. Private-course recordings can use Mux: direct uploads go from the browser to Mux, not through Railway. The admin tab can also import a public direct video URL into Mux, which lets Mux pull the file without uploading it through the browser. Playback on the student site is authorized through `/api/recordings/:id/playback`, which checks the existing student session and course access before returning short-lived signed Mux playback tokens.
 
 For recordings that do not need Mux protection, such as university-hosted Microsoft Teams / OneDrive videos, the admin recordings tab also supports saving an external OneDrive link plus an optional password or note. The site still checks course access before showing the link, but the video itself is governed by Microsoft/OneDrive sharing settings.
 

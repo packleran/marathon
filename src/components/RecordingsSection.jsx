@@ -191,7 +191,7 @@ function AdminRecordingPanel({ canEditContent, courseId, onCreated, onDeleted, o
   const canSubmit = canEditContent &&
     !isSubmitting &&
     Boolean(form.title.trim()) &&
-    (mode !== 'onedrive' || Boolean(form.sourceUrl.trim())) &&
+    (!['mux-url', 'onedrive'].includes(mode) || Boolean(form.sourceUrl.trim())) &&
     (mode !== 'existing' || Boolean(form.providerAssetId.trim() || form.providerPlaybackId.trim()))
 
   async function handleSubmit(event) {
@@ -211,6 +211,16 @@ function AdminRecordingPanel({ canEditContent, courseId, onCreated, onDeleted, o
         setActiveUpload({ recording: data.recording, uploadUrl: data.uploadUrl })
         onCreated(data.recording)
         setStatus({ type: 'success', text: 'נוצרה העלאה ישירה ל-Mux' })
+      } else if (mode === 'mux-url') {
+        const data = await createRecording({
+          provider: 'mux',
+          courseId,
+          title: form.title,
+          dateLabel: form.dateLabel,
+          sourceUrl: form.sourceUrl,
+        })
+        onCreated(data.recording)
+        setStatus({ type: 'success', text: 'ייבוא הקישור ל-Mux התחיל' })
       } else if (mode === 'onedrive') {
         const data = await createRecording({
           provider: 'onedrive',
@@ -308,9 +318,10 @@ function AdminRecordingPanel({ canEditContent, courseId, onCreated, onDeleted, o
         <div>
           <h2 className="text-base font-semibold text-text">הוספת הקלטה</h2>
         </div>
-        <div className="flex w-fit items-center gap-1 rounded-lg border border-border bg-inset p-1">
+        <div className="flex w-full flex-wrap items-center gap-1 rounded-lg border border-border bg-inset p-1 sm:w-fit">
           {[
             { key: 'upload', label: 'Mux מהמחשב' },
+            { key: 'mux-url', label: 'Mux מקישור' },
             { key: 'onedrive', label: 'קישור OneDrive' },
             { key: 'existing', label: 'Mux קיים' },
           ].map((item) => (
@@ -352,6 +363,19 @@ function AdminRecordingPanel({ canEditContent, courseId, onCreated, onDeleted, o
               />
             </label>
           </div>
+
+          {mode === 'mux-url' && (
+            <label className="mt-3 block text-xs font-semibold text-text-muted uppercase tracking-wider">
+              קישור ציבורי לייבוא
+              <input
+                dir="ltr"
+                type="url"
+                value={form.sourceUrl}
+                onChange={(event) => updateField('sourceUrl', event.target.value)}
+                className="mt-1.5 w-full rounded-xl border border-border bg-white px-3 py-2 text-left text-sm font-normal text-text outline-none focus:border-primary focus:ring-2 focus:ring-primary-soft"
+              />
+            </label>
+          )}
 
           {mode === 'onedrive' && (
             <label className="mt-3 block text-xs font-semibold text-text-muted uppercase tracking-wider">
