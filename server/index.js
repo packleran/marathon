@@ -2091,7 +2091,6 @@ app.get('/api/recordings', requireDatabase, requireStudentCourseFromQuery, async
 }))
 
 app.post('/api/recordings/direct-upload', requireDatabase, requireAdmin, asyncHandler(async (req, res) => {
-  await ensureDb()
   const courseId = String(req.body?.courseId ?? '').trim()
   const title = String(req.body?.title ?? '').trim()
   const dateLabel = String(req.body?.dateLabel ?? '').trim()
@@ -2101,7 +2100,28 @@ app.post('/api/recordings/direct-upload', requireDatabase, requireAdmin, asyncHa
     return
   }
 
-  const uploadSession = await createMuxDirectUpload(req)
+  if (!isMuxApiConfigured()) {
+    res.status(503).json({
+      error: 'Mux לא מוגדר בשירות האדמין. צריך להגדיר MUX_TOKEN_ID ו-MUX_TOKEN_SECRET ב-Railway.',
+    })
+    return
+  }
+
+  await ensureDb()
+
+  let uploadSession
+  try {
+    uploadSession = await createMuxDirectUpload(req)
+  } catch (error) {
+    console.error('[recordings/direct-upload] Mux direct upload failed', {
+      courseId,
+      corsOrigin: getRequestOrigin(req),
+      message: error.message,
+    })
+    res.status(502).json({ error: `Mux לא הצליח ליצור העלאה: ${error.message}` })
+    return
+  }
+
   const result = await pool.query(
     `INSERT INTO marathon_recordings
        (id, course_id, title, provider, provider_upload_id, playback_policy, date_label, status)
