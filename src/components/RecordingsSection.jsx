@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import MuxPlayer from '@mux/mux-player-react'
 import MuxUploader from '@mux/mux-uploader-react'
 import { getCourseTheme } from '../theme'
@@ -59,6 +59,16 @@ function providerText(provider) {
   if (provider === 'mux') return 'Mux'
 
   return ''
+}
+
+function formatBytes(bytes) {
+  if (!bytes) return ''
+
+  const units = ['B', 'KB', 'MB', 'GB']
+  const sizeIndex = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1)
+  const size = bytes / 1024 ** sizeIndex
+
+  return `${size.toFixed(size >= 10 || sizeIndex === 0 ? 0 : 1)} ${units[sizeIndex]}`
 }
 
 function recordingSortTime(recording) {
@@ -179,6 +189,10 @@ function AdminRecordingPanel({ canEditContent, courseId, onCreated, onDeleted, o
   const [status, setStatus] = useState(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
+  const [uploadFile, setUploadFile] = useState(null)
+  const uploadInputRef = useRef(null)
+  const uploaderRef = useRef(null)
+  const startedUploadKeyRef = useRef('')
 
   function updateField(field, value) {
     setForm((current) => ({ ...current, [field]: value }))
@@ -186,6 +200,49 @@ function AdminRecordingPanel({ canEditContent, courseId, onCreated, onDeleted, o
 
   function updateEditField(field, value) {
     setEditForm((current) => ({ ...current, [field]: value }))
+  }
+
+  useEffect(() => {
+    if (!activeUpload?.uploadUrl || !uploadFile || !uploaderRef.current) return
+
+    const uploadKey = [
+      activeUpload.recording.id,
+      uploadFile.name,
+      uploadFile.size,
+      uploadFile.lastModified,
+    ].join(':')
+
+    if (startedUploadKeyRef.current === uploadKey) return
+
+    startedUploadKeyRef.current = uploadKey
+    uploaderRef.current.dispatchEvent(new CustomEvent('file-ready', {
+      bubbles: true,
+      composed: true,
+      detail: uploadFile,
+    }))
+  }, [activeUpload, uploadFile])
+
+  function setSelectedUploadFile(file) {
+    setUploadFile(file)
+    startedUploadKeyRef.current = ''
+    setStatus(null)
+  }
+
+  function handleUploadFileChange(event) {
+    setSelectedUploadFile(event.target.files?.[0] ?? null)
+  }
+
+  function handleUploadFileDrop(event) {
+    event.preventDefault()
+    if (!canEditContent || isSubmitting) return
+
+    const file = event.dataTransfer.files?.[0] ?? null
+    if (!file) return
+
+    setSelectedUploadFile(file)
+    if (uploadInputRef.current) {
+      uploadInputRef.current.value = ''
+    }
   }
 
   function startEditing(recording) {
@@ -206,6 +263,7 @@ function AdminRecordingPanel({ canEditContent, courseId, onCreated, onDeleted, o
   const canSubmit = canEditContent &&
     !isSubmitting &&
     Boolean(form.title.trim()) &&
+    (mode !== 'upload' || Boolean(uploadFile)) &&
     (!['mux-url', 'onedrive'].includes(mode) || Boolean(form.sourceUrl.trim())) &&
     (mode !== 'existing' || Boolean(form.providerAssetId.trim() || form.providerPlaybackId.trim()))
 
@@ -218,14 +276,20 @@ function AdminRecordingPanel({ canEditContent, courseId, onCreated, onDeleted, o
 
     try {
       if (mode === 'upload') {
+        if (!uploadFile) {
+          setStatus({ type: 'error', text: 'צריך לבחור קובץ וידאו לפני ההעלאה' })
+          return
+        }
+
         const data = await createRecordingDirectUpload({
           courseId,
           title: form.title,
           dateLabel: form.dateLabel,
         })
+        startedUploadKeyRef.current = ''
         setActiveUpload({ recording: data.recording, uploadUrl: data.uploadUrl, uploadOrigin: data.uploadOrigin })
         onCreated(data.recording)
-        setStatus({ type: 'success', text: 'נוצרה העלאה ישירה ל-Mux' })
+        setStatus({ type: 'success', text: 'נוצרה העלאה ישירה ל-Mux. ההעלאה תתחיל מיד' })
       } else if (mode === 'mux-url') {
         const data = await createRecording({
           provider: 'mux',
@@ -444,9 +508,26 @@ function AdminRecordingPanel({ canEditContent, courseId, onCreated, onDeleted, o
           )}
 
           {mode === 'upload' && !activeUpload && (
-            <div className="mt-4 rounded-xl border border-dashed border-primary/35 bg-primary-soft px-4 py-4">
-              <div className="text-sm font-semibold text-primary">בחירת קובץ וידאו</div>
-            </div>
+            <label
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={handleUploadFileDrop}
+              className={`mt-4 block rounded-xl border border-dashed border-primary/35 bg-primary-soft px-4 py-4 transition-colors ${
+                canEditContent && !isSubmitting ? 'cursor-pointer hover:border-primary/60 hover:bg-[#E8EBFA]' : 'cursor-not-allowed'
+              }`}
+            >
+              <input
+                ref={uploadInputRef}
+                type="file"
+                accept="video/*,audio/*"
+                disabled={!canEditContent || isSubmitting}
+                onChange={handleUploadFileChange}
+                className="sr-only"
+              />
+              <span className="block text-sm font-semibold text-primary">בחירת קובץ וידאו</span>
+              <span className="mt-1 block truncate text-xs text-text-muted">
+                {uploadFile ? `${uploadFile.name} · ${formatBytes(uploadFile.size)}` : 'לחץ כאן או גרור קובץ וידאו לתיבה'}
+              </span>
+            </label>
           )}
         </fieldset>
 
@@ -456,7 +537,7 @@ function AdminRecordingPanel({ canEditContent, courseId, onCreated, onDeleted, o
             disabled={!canSubmit}
             className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
           >
-            {mode === 'upload' ? 'המשך לבחירת קובץ' : 'הוסף הקלטה'}
+            {mode === 'upload' ? 'התחל העלאה ל-Mux' : 'הוסף הקלטה'}
           </button>
           {status && (
             <span className={`text-xs ${status.type === 'error' ? 'text-danger' : 'text-success'}`}>
@@ -479,6 +560,7 @@ function AdminRecordingPanel({ canEditContent, courseId, onCreated, onDeleted, o
           </div>
           <div className="rounded-xl border border-dashed border-primary/35 bg-white p-4">
             <MuxUploader
+              ref={uploaderRef}
               endpoint={activeUpload.uploadUrl}
               dynamicChunkSize
               pausable
@@ -490,7 +572,15 @@ function AdminRecordingPanel({ canEditContent, courseId, onCreated, onDeleted, o
                 '--progress-radial-fill-color': '#4c57d4',
                 width: '100%',
               }}
-            />
+            >
+              <button
+                slot="file-select"
+                type="button"
+                className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-primary-hover cursor-pointer"
+              >
+                בחר קובץ וידאו
+              </button>
+            </MuxUploader>
           </div>
         </div>
       )}
