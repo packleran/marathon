@@ -2157,17 +2157,18 @@ app.post('/api/recordings', requireDatabase, requireAdmin, asyncHandler(async (r
     return
   }
 
-  if (provider === 'onedrive') {
+  if (provider === 'onedrive' || provider === 'googledrive') {
+    const providerLabel = provider === 'googledrive' ? 'Google Drive' : 'OneDrive'
     let externalUrl
     try {
-      externalUrl = parseHttpUrl(sourceUrl, 'OneDrive URL')
+      externalUrl = parseHttpUrl(sourceUrl, `${providerLabel} URL`)
     } catch (error) {
       res.status(400).json({ error: error.message })
       return
     }
 
     if (!externalUrl) {
-      res.status(400).json({ error: 'OneDrive URL is required' })
+      res.status(400).json({ error: `${providerLabel} URL is required` })
       return
     }
 
@@ -2177,12 +2178,13 @@ app.post('/api/recordings', requireDatabase, requireAdmin, asyncHandler(async (r
       `INSERT INTO marathon_recordings
          (id, course_id, title, provider, external_url, access_note, playback_policy,
           date_label, duration_seconds, status)
-       VALUES ($1, $2, $3, 'onedrive', $4, $5, 'external', $6, $7, 'ready')
+       VALUES ($1, $2, $3, $4, $5, $6, 'external', $7, $8, 'ready')
        RETURNING *`,
       [
         `recording:${courseId}:${createId()}`,
         courseId,
         title,
+        provider,
         externalUrl,
         accessNote,
         dateLabel,
@@ -2334,7 +2336,7 @@ app.get('/api/recordings/:id/playback', requireDatabase, asyncHandler(async (req
     return
   }
 
-  if (recording.provider === 'onedrive') {
+  if (recording.provider === 'onedrive' || recording.provider === 'googledrive') {
     if (!recording.external_url) {
       res.status(409).json({ error: 'Recording link is missing' })
       return
@@ -2343,7 +2345,7 @@ app.get('/api/recordings/:id/playback', requireDatabase, asyncHandler(async (req
     res.setHeader('Cache-Control', 'no-store')
     res.json({
       player: 'external',
-      provider: 'onedrive',
+      provider: recording.provider,
       url: recording.external_url,
       accessNote: recording.access_note,
       viewer: {

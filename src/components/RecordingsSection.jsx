@@ -56,9 +56,17 @@ function statusText(status) {
 
 function providerText(provider) {
   if (provider === 'onedrive') return 'OneDrive'
+  if (provider === 'googledrive') return 'Google Drive'
   if (provider === 'mux') return 'Mux'
 
   return ''
+}
+
+function externalPlaybackTitle(provider) {
+  if (provider === 'googledrive') return 'צפייה ב-Google Drive'
+  if (provider === 'onedrive') return 'צפייה ב-OneDrive / Teams'
+
+  return 'צפייה בקישור חיצוני'
 }
 
 function recordingSortTime(recording) {
@@ -206,7 +214,7 @@ function AdminRecordingPanel({ canEditContent, courseId, onCreated, onDeleted, o
   const canSubmit = canEditContent &&
     !isSubmitting &&
     Boolean(form.title.trim()) &&
-    (!['mux-url', 'onedrive'].includes(mode) || Boolean(form.sourceUrl.trim())) &&
+    (!['mux-url', 'onedrive', 'googledrive'].includes(mode) || Boolean(form.sourceUrl.trim())) &&
     (mode !== 'existing' || Boolean(form.providerAssetId.trim() || form.providerPlaybackId.trim()))
 
   async function handleSubmit(event) {
@@ -247,6 +255,17 @@ function AdminRecordingPanel({ canEditContent, courseId, onCreated, onDeleted, o
         })
         onCreated(data.recording)
         setStatus({ type: 'success', text: 'קישור OneDrive נוסף' })
+      } else if (mode === 'googledrive') {
+        const data = await createRecording({
+          provider: 'googledrive',
+          courseId,
+          title: form.title,
+          dateLabel: form.dateLabel,
+          sourceUrl: form.sourceUrl,
+          accessNote: form.accessNote,
+        })
+        onCreated(data.recording)
+        setStatus({ type: 'success', text: 'קישור Google Drive נוסף' })
       } else {
         const data = await createRecording({
           provider: 'mux',
@@ -316,7 +335,7 @@ function AdminRecordingPanel({ canEditContent, courseId, onCreated, onDeleted, o
         dateLabel: editForm.dateLabel,
       }
 
-      if (recording.provider === 'onedrive') {
+      if (recording.provider === 'onedrive' || recording.provider === 'googledrive') {
         updates.accessNote = editForm.accessNote
       }
 
@@ -342,6 +361,7 @@ function AdminRecordingPanel({ canEditContent, courseId, onCreated, onDeleted, o
             { key: 'upload', label: 'Mux מהמחשב' },
             { key: 'mux-url', label: 'Mux מקישור' },
             { key: 'onedrive', label: 'קישור OneDrive' },
+            { key: 'googledrive', label: 'קישור Google Drive' },
             { key: 'existing', label: 'Mux קיים' },
           ].map((item) => (
             <button
@@ -409,7 +429,20 @@ function AdminRecordingPanel({ canEditContent, courseId, onCreated, onDeleted, o
             </label>
           )}
 
-          {mode === 'onedrive' && (
+          {mode === 'googledrive' && (
+            <label className="mt-3 block text-xs font-semibold text-text-muted uppercase tracking-wider">
+              קישור Google Drive
+              <input
+                dir="ltr"
+                type="url"
+                value={form.sourceUrl}
+                onChange={(event) => updateField('sourceUrl', event.target.value)}
+                className="mt-1.5 w-full rounded-xl border border-border bg-white px-3 py-2 text-left text-sm font-normal text-text outline-none focus:border-primary focus:ring-2 focus:ring-primary-soft"
+              />
+            </label>
+          )}
+
+          {(mode === 'onedrive' || mode === 'googledrive') && (
             <label className="mt-3 block text-xs font-semibold text-text-muted uppercase tracking-wider">
               סיסמה / הערה
               <input
@@ -531,7 +564,7 @@ function AdminRecordingPanel({ canEditContent, courseId, onCreated, onDeleted, o
                         />
                       </label>
                     </div>
-                    {recording.provider === 'onedrive' && (
+                    {(recording.provider === 'onedrive' || recording.provider === 'googledrive') && (
                       <label className="text-xs font-semibold text-text-muted uppercase tracking-wider">
                         סיסמה / הערה
                         <input
@@ -707,12 +740,15 @@ export default function RecordingsSection({ canEditContent = false, course, isAd
           {playback?.player === 'external' ? (
             <div className="p-5">
               <div className="rounded-xl border border-border bg-inset p-4">
-                <div className="text-sm font-semibold text-text">צפייה ב-OneDrive / Teams</div>
+                <div className="text-sm font-semibold text-text">{externalPlaybackTitle(playback.provider)}</div>
                 {playback.accessNote && (
                   <div className="mt-2 rounded-lg border border-border bg-white px-3 py-2 text-sm text-text-2">
                     {playback.accessNote}
                   </div>
                 )}
+                <div className="mt-4 rounded-lg border border-danger/20 bg-danger/10 px-3 py-2 text-sm font-semibold text-danger">
+                  הפצת ההקלטה מהווה עבירה פלילית
+                </div>
                 <a
                   href={playback.url}
                   target="_blank"
