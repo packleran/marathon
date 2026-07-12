@@ -24,7 +24,7 @@ The server serves `dist/` and exposes `/api/*` for shared content, uploads, and 
 
 Student access is controlled from the admin UI. After a student pays, open the admin service, choose the student's course, add the student's phone number, and generate or set an initial password. The student site uses the phone number as the username and stores only a password hash in Postgres. Students in password-protected courses can sign in from multiple browsers or devices at the same time. Students only see courses assigned to their account.
 
-Courses listed in `STUDENT_PHONE_LOGIN_COURSE_IDS` use open group-choice access on the student site and do not require a password or a phone number. The default group-choice courses are `computational` (`מודלים חישוביים`) and `probability` (`הסתברות`). The student entry screen offers the available open groups, such as `מודלים ראש קבוצה יובל`, `מודלים ראש קבוצה שחר`, and `הסתברות`, and also exposes an Algorithms `תגבור` group when a custom Algorithms course includes `תגבור` in its name. The selected group is the only course shown afterward.
+Computational Models and Probability use open course-choice access on the student site and do not require a password, username, phone number, or approved-phone allowlist. The student entry screen offers the available open groups, such as `מודלים ראש קבוצה יובל`, `מודלים ראש קבוצה שחר`, and `הסתברות`, and also exposes an Algorithms `תגבור` group when a custom Algorithms course includes `תגבור` in its name. The selected group is the only course shown afterward.
 
 ## Railway layout
 
@@ -87,7 +87,6 @@ VITE_CONTENT_BACKEND=api
 DATABASE_URL=${{Postgres.DATABASE_URL}}
 STUDENT_AUTH_REQUIRED=true
 STUDENT_SESSION_DAYS=30
-STUDENT_PHONE_LOGIN_COURSE_IDS=computational,probability
 STUDENT_PHONE_ACCESS_SECRET=<choose-a-long-random-secret>
 MUX_SIGNING_KEY_ID=<mux-signing-key-id>
 MUX_SIGNING_PRIVATE_KEY=<mux-signing-private-key>
@@ -99,8 +98,8 @@ VITE_MUX_ENV_KEY=<mux-environment-key>
 
 `STUDENT_AUTH_REQUIRED=false` can temporarily disable the student login gate, but production should leave it enabled.
 
-`STUDENT_PHONE_LOGIN_COURSE_IDS` is a comma-separated list of root course ids that use open group-choice login. Leave it empty to make every course require username and password again.
+Computational Models and Probability are always enabled for open course-choice login. `STUDENT_PHONE_LOGIN_COURSE_IDS` is still accepted as a legacy comma-separated list for adding more open root course ids, but it is no longer needed for `computational` or `probability`.
 
-`STUDENT_PHONE_ACCESS_SECRET` signs the group-choice access cookie. If omitted, the server falls back to another server-side secret, but setting it explicitly is recommended.
+`STUDENT_PHONE_ACCESS_SECRET` signs the open course-choice access cookie. If omitted, the server falls back to another server-side secret, but setting it explicitly is recommended.
 
 `MUX_TOKEN_ID` and `MUX_TOKEN_SECRET` are needed only where recordings are created or synced with Mux. The student service only needs the signing key so it can generate playback tokens after authorization.

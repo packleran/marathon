@@ -490,7 +490,7 @@ export default function StudentAccessPanel({ courses = [], phoneLoginCourseIds =
                   <div className="mt-1 text-xs text-text-muted">{formatDate(student.lastLoginAt)}</div>
                   <div className="mt-1 font-mono text-xs text-text-muted" dir="ltr">
                     {student.phoneLoginOnly || isPhoneLoginCourseId(firstCourseId(student), phoneLoginCourseIdSet)
-                      ? 'Phone login: open'
+                      ? 'Open access'
                       : student.activeSessionCount > 0
                         ? 'Session: active'
                         : 'Session: none'}

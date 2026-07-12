@@ -33,9 +33,11 @@ const studentSessionDays = Number.isFinite(configuredStudentSessionDays)
   ? Math.max(1, configuredStudentSessionDays)
   : 30
 const disabledAuthValues = new Set(['0', 'false', 'no', 'off'])
-const studentPhoneLoginCourseIds = normalizeCourseIds(
-  process.env.STUDENT_PHONE_LOGIN_COURSE_IDS ?? process.env.STUDENT_PUBLIC_COURSE_IDS ?? 'computational,probability',
+const defaultCourseChoiceCourseIds = ['computational', 'probability']
+const configuredCourseChoiceCourseIds = normalizeCourseIds(
+  process.env.STUDENT_PHONE_LOGIN_COURSE_IDS ?? process.env.STUDENT_PUBLIC_COURSE_IDS ?? defaultCourseChoiceCourseIds,
 )
+const studentPhoneLoginCourseIds = [...new Set([...defaultCourseChoiceCourseIds, ...configuredCourseChoiceCourseIds])]
 const studentPhoneLoginCourseIdSet = new Set(studentPhoneLoginCourseIds)
 const studentPhoneAccessSecret = String(
   process.env.STUDENT_PHONE_ACCESS_SECRET ??
@@ -101,16 +103,6 @@ function normalizeCourseIds(value) {
   return [...new Set(values
     .map((item) => String(item ?? '').trim())
     .filter(Boolean))]
-}
-
-function normalizePhoneList(value) {
-  const values = Array.isArray(value)
-    ? value
-    : String(value ?? '').split(/[\s,;]+/)
-
-  return [...new Set(values
-    .map((item) => normalizePhone(item))
-    .filter((phone) => isValidPhone(phone)))]
 }
 
 function rootCourseId(course) {
@@ -215,13 +207,11 @@ function verifySignedPhoneAccessToken(token) {
     const courseIds = normalizeCourseIds(parsed.courseIds)
     if (courseIds.length === 0) return null
 
-    const type = parsed.type === 'course-choice' ? 'course-choice' : 'phone'
-    const phone = normalizePhone(parsed.phone)
-    if (type === 'phone' && !isValidPhone(phone)) return null
+    if (parsed.type !== 'course-choice') return null
 
     return {
-      type,
-      phone: type === 'phone' ? phone : '',
+      type: 'course-choice',
+      phone: '',
       name: String(parsed.name ?? '').trim(),
       courseIds,
       expiresAt: Number(parsed.expiresAt),
@@ -784,16 +774,6 @@ function getPhoneLoginCourseById(courseId, overrides) {
     .find((course) => isPhoneLoginCourse(course) && String(course.id) === normalizedCourseId) ?? null
 }
 
-function getPhoneLoginCourseIdsForPhone(phone, overrides) {
-  const normalizedPhone = normalizePhone(phone)
-  if (!isValidPhone(normalizedPhone)) return []
-
-  return applyServerCourseOverrides(courses, overrides)
-    .filter((course) => isPhoneLoginCourse(course))
-    .filter((course) => normalizePhoneList(course.approvedPhones).includes(normalizedPhone))
-    .map((course) => String(course.id))
-}
-
 async function loadContentOverridesFromDatabase() {
   if (!pool) return {}
 
@@ -822,7 +802,6 @@ function isPublicStudentApiRequest(req) {
     req.path === '/api/config' ||
     req.path === '/api/courses' ||
     req.path === '/api/student-auth/course-login' ||
-    req.path === '/api/student-auth/phone-login' ||
     req.path === '/api/student-auth/logout'
   )
 }
@@ -1719,48 +1698,6 @@ app.post('/api/student-auth/login', requireDatabase, asyncHandler(async (req, re
   }
 }))
 
-app.post('/api/student-auth/phone-login', requireDatabase, asyncHandler(async (req, res) => {
-  if (!isStudentAuthRequired() || studentPhoneLoginCourseIds.length === 0) {
-    res.status(400).json({ error: 'Phone login is not enabled' })
-    return
-  }
-
-  const phone = normalizePhone(req.body?.phone)
-  if (!isValidPhone(phone)) {
-    res.status(400).json({ error: 'יש להזין מספר טלפון תקין' })
-    return
-  }
-
-  const overrides = await loadContentOverridesFromDatabase()
-  const courseIds = getPhoneLoginCourseIdsForPhone(phone, overrides)
-  if (courseIds.length === 0) {
-    clearStudentPhoneAccessCookie(req, res)
-    res.status(401).json({ error: 'הטלפון לא נמצא ברשימת המורשים לקורסים ללא סיסמה' })
-    return
-  }
-
-  if (courseIds.length > 1) {
-    clearStudentPhoneAccessCookie(req, res)
-    res.status(409).json({
-      error: 'הטלפון מופיע ביותר מקבוצה אחת ללא סיסמה. צריך להסיר כפילות באדמין לפני כניסה.',
-    })
-    return
-  }
-
-  const expiresAt = Date.now() + studentSessionDays * 24 * 60 * 60 * 1000
-  const phoneAccess = {
-    type: 'phone',
-    phone,
-    name: '',
-    courseIds,
-    expiresAt,
-  }
-
-  clearStudentSessionCookie(req, res)
-  setStudentPhoneAccessCookie(req, res, phoneAccess)
-  res.json({ phoneAccess })
-}))
-
 app.post('/api/student-auth/course-login', requireDatabase, asyncHandler(async (req, res) => {
   if (!isStudentAuthRequired() || studentPhoneLoginCourseIds.length === 0) {
     res.status(400).json({ error: 'Course choice login is not enabled' })
@@ -1776,10 +1713,8 @@ app.post('/api/student-auth/course-login', requireDatabase, asyncHandler(async (
     return
   }
 
-  const option = createPhoneLoginCourseOption(
-    course,
-    getPhoneLoginCourseOptions(overrides).findIndex((item) => item.id === String(course.id)),
-  )
+  const option = getPhoneLoginCourseOptions(overrides)
+    .find((item) => item.id === String(course.id)) ?? createPhoneLoginCourseOption(course, 0)
   const expiresAt = Date.now() + studentSessionDays * 24 * 60 * 60 * 1000
   const phoneAccess = {
     type: 'course-choice',

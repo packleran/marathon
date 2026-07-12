@@ -15,6 +15,12 @@ function cloneContent(value) {
   return JSON.parse(JSON.stringify(value))
 }
 
+function withoutDeprecatedCourseFields(course) {
+  const next = { ...(course ?? {}) }
+  delete next.approvedPhones
+  return next
+}
+
 function hasOwnKeys(value) {
   return Boolean(value && typeof value === 'object' && Object.keys(value).length > 0)
 }
@@ -186,14 +192,13 @@ export function applyContentOverrides(courses, overrides) {
 }
 
 export function createDuplicatedCourse(course) {
-  return {
+  return withoutDeprecatedCourseFields({
     ...cloneContent(course),
     id: `${course.id}-group-${createId()}`,
     sourceCourseId: course.sourceCourseId ?? course.id,
     name: `${course.name} - קבוצה נוספת`,
     locked: false,
-    approvedPhones: [],
-  }
+  })
 }
 
 export function createBlankMeeting(course) {
@@ -255,15 +260,16 @@ export function deleteCourseOverride(overrides, courseId) {
 
 export function updateCourseOverride(overrides, courseId, updates) {
   const currentCourse = overrides[courseId] ?? {}
+  const course = withoutDeprecatedCourseFields({
+    ...(currentCourse.course ?? {}),
+    ...updates,
+  })
 
   return {
     ...overrides,
     [courseId]: {
       ...currentCourse,
-      course: {
-        ...(currentCourse.course ?? {}),
-        ...updates,
-      },
+      course,
     },
   }
 }

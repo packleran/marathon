@@ -36,7 +36,6 @@ const contentTabs = [
   { key: 'recordings', label: 'הקלטות' },
 ]
 
-const phoneLoginRootCourseIds = new Set(['computational', 'probability'])
 const loginCourseOptions = [
   { id: 'computational', label: 'מודלים', mode: 'course-choice' },
   { id: 'probability', label: 'הסתברות', mode: 'course-choice' },
@@ -59,29 +58,6 @@ function parseJsonArray(label, value) {
   }
 
   return parsed
-}
-
-function normalizePhone(value) {
-  const digits = String(value ?? '').replace(/\D/g, '')
-  if (digits.startsWith('972') && digits.length >= 11) return `0${digits.slice(3)}`
-
-  return digits
-}
-
-function normalizePhoneList(value) {
-  return [...new Set(String(value ?? '')
-    .split(/[\s,;]+/)
-    .map((item) => normalizePhone(item))
-    .filter((phone) => phone.length >= 8 && phone.length <= 15))]
-}
-
-function formatPhoneList(value) {
-  return (Array.isArray(value) ? value : []).join('\n')
-}
-
-function isPhoneLoginCourse(course) {
-  const rootCourseId = String(course?.sourceCourseId ?? course?.id ?? '')
-  return phoneLoginRootCourseIds.has(rootCourseId)
 }
 
 function clearModeQueryParams() {
@@ -408,12 +384,10 @@ function CourseEditor({
   onSave,
   onUnlock,
 }) {
-  const isPhoneLoginGroup = isPhoneLoginCourse(course)
   const [form, setForm] = useState({
     name: course.name,
     subtitle: course.subtitle,
     nextSession: toDatetimeLocal(course.nextSession),
-    approvedPhones: formatPhoneList(course.approvedPhones),
     deadlines: formatJson(course.deadlines),
     resources: formatJson(course.resources),
   })
@@ -442,7 +416,6 @@ function CourseEditor({
       name: form.name.trim(),
       subtitle: form.subtitle.trim(),
       nextSession: form.nextSession,
-      ...(isPhoneLoginGroup ? { approvedPhones: normalizePhoneList(form.approvedPhones) } : {}),
       deadlines,
       resources,
     })

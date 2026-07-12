@@ -36,14 +36,6 @@ export async function loadCourses() {
   }
 }
 
-export async function loginWithPhone(phone) {
-  return fetchJson('/api/student-auth/phone-login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ phone }),
-  })
-}
-
 export async function loginWithCourseChoice(courseId) {
   return fetchJson('/api/student-auth/course-login', {
     method: 'POST',
