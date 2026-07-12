@@ -84,7 +84,7 @@ function isPhoneLoginCourseId(courseId, phoneLoginCourseIdSet = new Set()) {
 
 function courseName(courses, courseId, phoneLoginCourseIdSet = new Set()) {
   const label = courses.find((course) => String(course.id) === String(courseId))?.name ?? courseId
-  return isPhoneLoginCourseId(courseId, phoneLoginCourseIdSet) ? `${label} (טלפון בלבד)` : label
+  return isPhoneLoginCourseId(courseId, phoneLoginCourseIdSet) ? `${label} (ללא סיסמה)` : label
 }
 
 function toWhatsAppPhoneNumber(value) {

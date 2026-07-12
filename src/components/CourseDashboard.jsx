@@ -36,10 +36,10 @@ const contentTabs = [
   { key: 'recordings', label: 'הקלטות' },
 ]
 
-const phoneLoginRootCourseIds = new Set(['computational'])
+const phoneLoginRootCourseIds = new Set(['computational', 'probability'])
 const loginCourseOptions = [
   { id: 'computational', label: 'מודלים', mode: 'course-choice' },
-  { id: 'probability', label: 'הסתברות', mode: 'password' },
+  { id: 'probability', label: 'הסתברות', mode: 'course-choice' },
   { id: 'algorithms', label: 'אלגוריתמים', mode: 'password' },
   { id: 'algorithms-boost', label: 'תגבור', mode: 'course-choice', sourceCourseId: 'algorithms' },
 ]
@@ -239,7 +239,7 @@ function StudentAccountBar({ student, onLogout }) {
         <div className="min-w-0">
           <div className="text-xs font-semibold text-text-muted">מחובר כסטודנט</div>
           <div className="truncate text-sm font-semibold text-text">
-            {student.name || student.phone || 'קבוצת מודלים'}
+            {student.name || student.phone || 'קבוצה פתוחה'}
             {student.name && student.phone && (
               <span className="mr-2 font-mono text-[13px] font-medium text-text-muted" dir="ltr">
                 {student.phone}
@@ -641,6 +641,7 @@ export default function CourseDashboard() {
       loadAppConfig().catch(() => ({
         studentAuthRequired: false,
         phoneLoginCourseIds: [],
+        courseChoiceOptions: [],
         modelGroupOptions: [],
         student: null,
         phoneAccess: null,
@@ -901,7 +902,7 @@ export default function CourseDashboard() {
   ) {
     return (
       <StudentEntryPanel
-        courseChoiceOptions={appConfig?.modelGroupOptions ?? []}
+        courseChoiceOptions={appConfig?.courseChoiceOptions ?? appConfig?.modelGroupOptions ?? []}
       />
     )
   }

@@ -34,7 +34,7 @@ const studentSessionDays = Number.isFinite(configuredStudentSessionDays)
   : 30
 const disabledAuthValues = new Set(['0', 'false', 'no', 'off'])
 const studentPhoneLoginCourseIds = normalizeCourseIds(
-  process.env.STUDENT_PHONE_LOGIN_COURSE_IDS ?? process.env.STUDENT_PUBLIC_COURSE_IDS ?? 'computational',
+  process.env.STUDENT_PHONE_LOGIN_COURSE_IDS ?? process.env.STUDENT_PUBLIC_COURSE_IDS ?? 'computational,probability',
 )
 const studentPhoneLoginCourseIdSet = new Set(studentPhoneLoginCourseIds)
 const studentPhoneAccessSecret = String(
@@ -716,8 +716,26 @@ function inferModelGroupLeader(course, index) {
   return modelGroupFallbackLeaders[index] ?? `קבוצה ${index + 1}`
 }
 
+function createGenericCourseChoiceOption(course) {
+  const rootLabels = {
+    probability: 'הסתברות',
+  }
+  const rootId = rootCourseId(course)
+  const courseId = String(course.id)
+  const name = String(course.name ?? '').trim()
+
+  return {
+    id: courseId,
+    label: courseId === rootId && rootLabels[rootId] ? rootLabels[rootId] : name || rootLabels[rootId] || courseId,
+    name,
+    sourceCourseId: String(course.sourceCourseId ?? course.id),
+  }
+}
+
 function createPhoneLoginCourseOption(course, index) {
-  if (rootCourseId(course) === 'algorithms') {
+  const rootId = rootCourseId(course)
+
+  if (rootId === 'algorithms') {
     const text = courseText(course)
     const fallbackName = String(course.name ?? '').replace('תכנון אלגוריתמים', '').replace(/^[-–\s]+/, '').trim()
 
@@ -727,6 +745,10 @@ function createPhoneLoginCourseOption(course, index) {
       name: String(course.name ?? ''),
       sourceCourseId: String(course.sourceCourseId ?? course.id),
     }
+  }
+
+  if (rootId !== 'computational') {
+    return createGenericCourseChoiceOption(course)
   }
 
   const leader = inferModelGroupLeader(course, index)
@@ -742,9 +764,16 @@ function createPhoneLoginCourseOption(course, index) {
 }
 
 function getPhoneLoginCourseOptions(overrides) {
+  const rootIndexes = new Map()
+
   return applyServerCourseOverrides(courses, overrides)
     .filter((course) => isPhoneLoginCourse(course))
-    .map((course, index) => createPhoneLoginCourseOption(course, index))
+    .map((course) => {
+      const rootId = rootCourseId(course)
+      const index = rootIndexes.get(rootId) ?? 0
+      rootIndexes.set(rootId, index + 1)
+      return createPhoneLoginCourseOption(course, index)
+    })
 }
 
 function getPhoneLoginCourseById(courseId, overrides) {
@@ -1546,6 +1575,7 @@ app.get('/api/config', asyncHandler(async (req, res) => {
   const student = await getAuthenticatedStudent(req)
   const phoneAccess = student ? null : getAuthenticatedPhoneAccess(req)
   const contentOverrides = await loadContentOverridesFromDatabase()
+  const courseChoiceOptions = getPhoneLoginCourseOptions(contentOverrides)
 
   res.json({
     role: isAdminService ? 'admin' : 'student',
@@ -1553,7 +1583,8 @@ app.get('/api/config', asyncHandler(async (req, res) => {
     hasDatabase: Boolean(pool),
     studentAuthRequired: isStudentAuthRequired(),
     phoneLoginCourseIds: studentPhoneLoginCourseIds,
-    modelGroupOptions: getPhoneLoginCourseOptions(contentOverrides),
+    courseChoiceOptions,
+    modelGroupOptions: courseChoiceOptions,
     publicCourseIds: [],
     phoneAccess,
     student,
@@ -1704,14 +1735,14 @@ app.post('/api/student-auth/phone-login', requireDatabase, asyncHandler(async (r
   const courseIds = getPhoneLoginCourseIdsForPhone(phone, overrides)
   if (courseIds.length === 0) {
     clearStudentPhoneAccessCookie(req, res)
-    res.status(401).json({ error: 'הטלפון לא נמצא ברשימת המורשים לקורס מודלים חישוביים' })
+    res.status(401).json({ error: 'הטלפון לא נמצא ברשימת המורשים לקורסים ללא סיסמה' })
     return
   }
 
   if (courseIds.length > 1) {
     clearStudentPhoneAccessCookie(req, res)
     res.status(409).json({
-      error: 'הטלפון מופיע ביותר מקבוצת מודלים אחת. צריך להסיר כפילות באדמין לפני כניסה.',
+      error: 'הטלפון מופיע ביותר מקבוצה אחת ללא סיסמה. צריך להסיר כפילות באדמין לפני כניסה.',
     })
     return
   }

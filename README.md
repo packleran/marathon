@@ -24,7 +24,7 @@ The server serves `dist/` and exposes `/api/*` for shared content, uploads, and 
 
 Student access is controlled from the admin UI. After a student pays, open the admin service, choose the student's course, add the student's phone number, and generate or set an initial password. The student site uses the phone number as the username and stores only a password hash in Postgres. Students in password-protected courses can sign in from multiple browsers or devices at the same time. Students only see courses assigned to their account.
 
-Courses listed in `STUDENT_PHONE_LOGIN_COURSE_IDS` use open group-choice access on the student site and do not require a password or a phone number. The default group-choice course is `computational` (`מודלים חישוביים`). The student entry screen offers the available Computational Models groups, such as `מודלים ראש קבוצה יובל` and `מודלים ראש קבוצה שחר`, and also exposes an Algorithms `תגבור` group when a custom Algorithms course includes `תגבור` in its name. The selected group is the only course shown afterward.
+Courses listed in `STUDENT_PHONE_LOGIN_COURSE_IDS` use open group-choice access on the student site and do not require a password or a phone number. The default group-choice courses are `computational` (`מודלים חישוביים`) and `probability` (`הסתברות`). The student entry screen offers the available open groups, such as `מודלים ראש קבוצה יובל`, `מודלים ראש קבוצה שחר`, and `הסתברות`, and also exposes an Algorithms `תגבור` group when a custom Algorithms course includes `תגבור` in its name. The selected group is the only course shown afterward.
 
 ## Railway layout
 
@@ -87,7 +87,7 @@ VITE_CONTENT_BACKEND=api
 DATABASE_URL=${{Postgres.DATABASE_URL}}
 STUDENT_AUTH_REQUIRED=true
 STUDENT_SESSION_DAYS=30
-STUDENT_PHONE_LOGIN_COURSE_IDS=computational
+STUDENT_PHONE_LOGIN_COURSE_IDS=computational,probability
 STUDENT_PHONE_ACCESS_SECRET=<choose-a-long-random-secret>
 MUX_SIGNING_KEY_ID=<mux-signing-key-id>
 MUX_SIGNING_PRIVATE_KEY=<mux-signing-private-key>
