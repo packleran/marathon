@@ -7,7 +7,10 @@ function apiUrl(path) {
 async function readJsonResponse(response) {
   if (!response.ok) {
     const data = await response.json().catch(() => ({}))
-    throw new Error(data.error || `Request failed with ${response.status}`)
+    const error = new Error(data.error || `Request failed with ${response.status}`)
+    error.status = response.status
+    error.code = data.code || ''
+    throw error
   }
 
   return response.json()
@@ -145,4 +148,12 @@ export async function deleteRecording(recordingId) {
 
 export async function getRecordingPlayback(recordingId) {
   return fetchJson(`/api/recordings/${encodeURIComponent(recordingId)}/playback`)
+}
+
+export async function unlockRecordings({ courseId, password }) {
+  return fetchJson('/api/recordings/access', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ courseId, password }),
+  })
 }

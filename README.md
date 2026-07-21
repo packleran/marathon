@@ -102,4 +102,6 @@ Computational Models and Probability are always enabled for open course-choice l
 
 `STUDENT_PHONE_ACCESS_SECRET` signs the open course-choice access cookie. If omitted, the server falls back to another server-side secret, but setting it explicitly is recommended.
 
+Computational Models recordings are additionally locked behind a recordings password. By default, `MODEL_RECORDINGS_PASSWORD` is `231199` and `MODEL_RECORDINGS_PASSWORD_COURSE_IDS` is `computational`, which also covers duplicated `computational-group-*` courses. Set `MODEL_RECORDINGS_PASSWORD_SECRET` explicitly to sign the recordings access cookie with a stable server-side secret.
+
 `MUX_TOKEN_ID` and `MUX_TOKEN_SECRET` are needed only where recordings are created or synced with Mux. The student service only needs the signing key so it can generate playback tokens after authorization.
