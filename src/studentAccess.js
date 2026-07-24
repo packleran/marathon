@@ -149,11 +149,3 @@ export async function deleteRecording(recordingId) {
 export async function getRecordingPlayback(recordingId) {
   return fetchJson(`/api/recordings/${encodeURIComponent(recordingId)}/playback`)
 }
-
-export async function unlockRecordings({ courseId, password }) {
-  return fetchJson('/api/recordings/access', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ courseId, password }),
-  })
-}

@@ -102,6 +102,6 @@ Probability is enabled for open course-choice login. `STUDENT_PHONE_LOGIN_COURSE
 
 `STUDENT_PHONE_ACCESS_SECRET` signs the open course-choice access cookie. If omitted, the server falls back to another server-side secret, but setting it explicitly is recommended.
 
-`MODEL_RECORDINGS_PASSWORD` is optional and disabled when empty. If set, it adds a shared extra recordings password for the course ids in `MODEL_RECORDINGS_PASSWORD_COURSE_IDS`; it is ignored for Computational Models because that course now uses username/password access.
+Recordings do not use an additional shared site password. Access is based on the existing student session and course assignment; external links may still include their own provider password or note.
 
 `MUX_TOKEN_ID` and `MUX_TOKEN_SECRET` are needed only where recordings are created or synced with Mux. The student service only needs the signing key so it can generate playback tokens after authorization.

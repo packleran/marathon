@@ -28,7 +28,6 @@ const adminPassword = process.env.ADMIN_PASSWORD ?? ''
 const databaseUrl = process.env.DATABASE_URL
 const studentSessionCookie = 'marathon_student_session'
 const studentPhoneAccessCookie = 'marathon_phone_access'
-const recordingsPasswordAccessCookie = 'marathon_recordings_access'
 const configuredStudentSessionDays = Number(process.env.STUDENT_SESSION_DAYS ?? 30)
 const studentSessionDays = Number.isFinite(configuredStudentSessionDays)
   ? Math.max(1, configuredStudentSessionDays)
@@ -49,22 +48,6 @@ const studentPhoneAccessSecret = String(
   adminPassword ??
   databaseUrl ??
   'marathon-phone-access-local-dev',
-)
-const modelRecordingsPassword = String(
-  process.env.MODEL_RECORDINGS_PASSWORD ??
-  process.env.RECORDINGS_PASSWORD ??
-  '',
-).trim()
-const modelRecordingsPasswordCourseIds = normalizeCourseIds(
-  process.env.MODEL_RECORDINGS_PASSWORD_COURSE_IDS ??
-  process.env.RECORDINGS_PASSWORD_COURSE_IDS ??
-  'computational',
-)
-const modelRecordingsPasswordCourseIdSet = new Set(modelRecordingsPasswordCourseIds)
-const modelRecordingsPasswordSecret = String(
-  process.env.MODEL_RECORDINGS_PASSWORD_SECRET ??
-  process.env.RECORDINGS_PASSWORD_SECRET ??
-  studentPhoneAccessSecret,
 )
 const modelGroupFallbackLeaders = ['יובל', 'שחר']
 const whatsAppCredentialsEnabled = !disabledAuthValues.has(String(process.env.WHATSAPP_SEND_CREDENTIALS ?? 'true').toLowerCase())
@@ -225,11 +208,6 @@ function createSignedPhoneAccessToken(phoneAccess) {
   return `${payload}.${signValue(payload)}`
 }
 
-function createSignedRecordingsAccessToken(recordingsAccess) {
-  const payload = Buffer.from(JSON.stringify(recordingsAccess)).toString('base64url')
-  return `${payload}.${signValue(payload, modelRecordingsPasswordSecret)}`
-}
-
 function verifySignedPhoneAccessToken(token) {
   const [payload, signature] = String(token ?? '').split('.')
   if (!payload || !signature || !safeEqualString(signValue(payload), signature)) return null
@@ -248,31 +226,6 @@ function verifySignedPhoneAccessToken(token) {
       type: 'course-choice',
       phone: '',
       name: String(parsed.name ?? '').trim(),
-      courseIds,
-      expiresAt: Number(parsed.expiresAt),
-    }
-  } catch {
-    return null
-  }
-}
-
-function verifySignedRecordingsAccessToken(token) {
-  const [payload, signature] = String(token ?? '').split('.')
-  if (!payload || !signature || !safeEqualString(signValue(payload, modelRecordingsPasswordSecret), signature)) {
-    return null
-  }
-
-  try {
-    const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'))
-    if (!parsed || typeof parsed !== 'object') return null
-    if (parsed.type !== 'recordings-password') return null
-    if (Number(parsed.expiresAt) <= Date.now()) return null
-
-    const courseIds = normalizeCourseIds(parsed.courseIds)
-    if (courseIds.length === 0) return null
-
-    return {
-      type: 'recordings-password',
       courseIds,
       expiresAt: Number(parsed.expiresAt),
     }
@@ -359,22 +312,6 @@ function setStudentPhoneAccessCookie(req, res, phoneAccess) {
 
 function clearStudentPhoneAccessCookie(req, res) {
   appendSetCookie(res, serializeCookie(studentPhoneAccessCookie, '', {
-    expires: new Date(0),
-    maxAge: 0,
-    secure: shouldUseSecureCookie(req),
-  }))
-}
-
-function setRecordingsPasswordAccessCookie(req, res, recordingsAccess) {
-  appendSetCookie(res, serializeCookie(recordingsPasswordAccessCookie, createSignedRecordingsAccessToken(recordingsAccess), {
-    expires: new Date(recordingsAccess.expiresAt),
-    maxAge: Math.max(0, Math.floor((recordingsAccess.expiresAt - Date.now()) / 1000)),
-    secure: shouldUseSecureCookie(req),
-  }))
-}
-
-function clearRecordingsPasswordAccessCookie(req, res) {
-  appendSetCookie(res, serializeCookie(recordingsPasswordAccessCookie, '', {
     expires: new Date(0),
     maxAge: 0,
     secure: shouldUseSecureCookie(req),
@@ -701,47 +638,6 @@ function studentCanAccessCourse(req, courseId) {
 
 function rejectStudentCourseAccess(res) {
   res.status(403).json({ error: 'This student is not assigned to this course' })
-}
-
-function isRecordingsPasswordProtectedCourseId(courseId) {
-  if (!modelRecordingsPassword || modelRecordingsPasswordCourseIds.length === 0) return false
-
-  const normalizedCourseId = String(courseId ?? '').trim()
-  if (!normalizedCourseId) return false
-  if (isPasswordOnlyCourseChoiceCourseId(normalizedCourseId)) return false
-  if (modelRecordingsPasswordCourseIdSet.has(normalizedCourseId)) return true
-
-  return modelRecordingsPasswordCourseIds.some((rootId) => (
-    normalizedCourseId.startsWith(`${rootId}-group-`)
-  ))
-}
-
-function recordingsPasswordAccessAllowsCourse(recordingsAccess, courseId) {
-  const normalizedCourseId = String(courseId ?? '').trim()
-  if (!normalizedCourseId) return false
-
-  return normalizeCourseIds(recordingsAccess?.courseIds).some((rootId) => (
-    normalizedCourseId === rootId || normalizedCourseId.startsWith(`${rootId}-group-`)
-  ))
-}
-
-function getRecordingsPasswordAccess(req) {
-  return verifySignedRecordingsAccessToken(parseCookies(req)[recordingsPasswordAccessCookie])
-}
-
-function hasRecordingsPasswordAccess(req, courseId) {
-  if (!shouldEnforceStudentCourseAccess() || isAdminService) return true
-  if (!isRecordingsPasswordProtectedCourseId(courseId)) return true
-
-  return recordingsPasswordAccessAllowsCourse(getRecordingsPasswordAccess(req), courseId)
-}
-
-function rejectRecordingsPasswordAccess(res) {
-  res.setHeader('Cache-Control', 'no-store')
-  res.status(403).json({
-    error: 'יש להזין סיסמה כדי לצפות בהקלטות',
-    code: 'recordings_password_required',
-  })
 }
 
 function requireStudentCourseFromQuery(req, res, next) {
@@ -1855,7 +1751,6 @@ app.post('/api/student-auth/logout', asyncHandler(async (req, res) => {
 
   clearStudentSessionCookie(req, res)
   clearStudentPhoneAccessCookie(req, res)
-  clearRecordingsPasswordAccessCookie(req, res)
   res.status(204).end()
 }))
 
@@ -2152,63 +2047,12 @@ app.put('/api/content', requireDatabase, requireAdmin, asyncHandler(async (req, 
   })
 }))
 
-app.post('/api/recordings/access', requireDatabase, asyncHandler(async (req, res) => {
-  res.setHeader('Cache-Control', 'no-store')
-
-  const courseId = String(req.body?.courseId ?? '').trim()
-  if (!courseId) {
-    res.status(400).json({ error: 'Missing courseId' })
-    return
-  }
-
-  if (!studentCanAccessCourse(req, courseId)) {
-    rejectStudentCourseAccess(res)
-    return
-  }
-
-  if (!shouldEnforceStudentCourseAccess() || isAdminService || !isRecordingsPasswordProtectedCourseId(courseId)) {
-    res.json({ unlocked: true, required: false })
-    return
-  }
-
-  const password = String(req.body?.password ?? '').trim()
-  if (!password) {
-    res.status(400).json({ error: 'יש להזין סיסמה' })
-    return
-  }
-
-  if (!safeEqualString(password, modelRecordingsPassword)) {
-    clearRecordingsPasswordAccessCookie(req, res)
-    res.status(401).json({ error: 'סיסמה שגויה' })
-    return
-  }
-
-  const expiresAt = Date.now() + studentSessionDays * 24 * 60 * 60 * 1000
-  const recordingsAccess = {
-    type: 'recordings-password',
-    courseIds: modelRecordingsPasswordCourseIds,
-    expiresAt,
-  }
-
-  setRecordingsPasswordAccessCookie(req, res, recordingsAccess)
-  res.json({ unlocked: true, required: true })
-}))
-
 app.get('/api/recordings', requireDatabase, requireStudentCourseFromQuery, asyncHandler(async (req, res) => {
   await ensureDb()
   const courseId = String(req.query.courseId ?? '').trim()
   if (!courseId) {
     res.status(400).json({ error: 'Missing courseId' })
     return
-  }
-
-  if (!hasRecordingsPasswordAccess(req, courseId)) {
-    rejectRecordingsPasswordAccess(res)
-    return
-  }
-
-  if (isRecordingsPasswordProtectedCourseId(courseId)) {
-    res.setHeader('Cache-Control', 'no-store')
   }
 
   const result = await pool.query(
@@ -2468,11 +2312,6 @@ app.get('/api/recordings/:id/playback', requireDatabase, asyncHandler(async (req
 
   if (!studentCanAccessCourse(req, recording.course_id)) {
     rejectStudentCourseAccess(res)
-    return
-  }
-
-  if (!hasRecordingsPasswordAccess(req, recording.course_id)) {
-    rejectRecordingsPasswordAccess(res)
     return
   }
 

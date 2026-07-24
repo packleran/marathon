@@ -10,11 +10,9 @@ import {
   listRecordings,
   syncRecording,
   updateRecording,
-  unlockRecordings,
 } from '../studentAccess'
 
 const muxEnvKey = import.meta.env.VITE_MUX_ENV_KEY ?? ''
-const RECORDINGS_PASSWORD_REQUIRED_CODE = 'recordings_password_required'
 
 function browserOrigin() {
   if (typeof window === 'undefined') return ''
@@ -115,61 +113,6 @@ function EmptyState() {
       </div>
       <p className="text-sm text-text-muted">עוד אין הקלטות לקורס הזה</p>
     </div>
-  )
-}
-
-function RecordingsPasswordGate({
-  error,
-  isSubmitting,
-  onPasswordChange,
-  onSubmit,
-  password,
-}) {
-  return (
-    <form
-      noValidate
-      onSubmit={onSubmit}
-      className="rounded-2xl border border-border bg-white p-6 text-right shadow-sm"
-    >
-      <div className="mb-5 flex items-center gap-3">
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary-soft text-primary">
-          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.8">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V7.5a4.5 4.5 0 00-9 0v3m-.75 0h10.5A1.5 1.5 0 0118.75 12v6.75a1.5 1.5 0 01-1.5 1.5H6.75a1.5 1.5 0 01-1.5-1.5V12a1.5 1.5 0 011.5-1.5z" />
-          </svg>
-        </div>
-        <div>
-          <h2 className="text-base font-semibold text-text">הקלטות נעולות</h2>
-          <p className="mt-1 text-sm text-text-muted">יש להזין סיסמה כדי לצפות בהקלטות.</p>
-        </div>
-      </div>
-
-      <label className="block text-xs font-semibold uppercase tracking-wider text-text-muted">
-        סיסמת הקלטות
-        <input
-          autoComplete="current-password"
-          autoFocus
-          className="mt-1.5 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm font-normal text-text outline-none focus:border-primary focus:ring-2 focus:ring-primary-soft"
-          onChange={(event) => onPasswordChange(event.target.value)}
-          type="password"
-          value={password}
-        />
-      </label>
-
-      <div className="mt-4 flex flex-wrap items-center gap-2">
-        <button
-          type="submit"
-          disabled={isSubmitting || !password.trim()}
-          className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
-        >
-          כניסה להקלטות
-        </button>
-        {error && (
-          <span className="text-xs text-danger" role="alert">
-            {error}
-          </span>
-        )}
-      </div>
-    </form>
   )
 }
 
@@ -703,9 +646,6 @@ export default function RecordingsSection({ canEditContent = false, course, isAd
   const [activeRecording, setActiveRecording] = useState(null)
   const [playback, setPlayback] = useState(null)
   const [playbackState, setPlaybackState] = useState({ loading: false, error: '' })
-  const [passwordGate, setPasswordGate] = useState({ required: false, unlocking: false, error: '' })
-  const [recordingsPassword, setRecordingsPassword] = useState('')
-  const [recordingsReloadToken, setRecordingsReloadToken] = useState(0)
 
   useEffect(() => {
     let ignore = false
@@ -714,7 +654,6 @@ export default function RecordingsSection({ canEditContent = false, course, isAd
       setLoadState({ loading: true, error: '' })
       setPlayback(null)
       setActiveRecording(null)
-      setPasswordGate({ required: false, unlocking: false, error: '' })
 
       try {
         const loadedRecordings = await listRecordings(course.id)
@@ -724,13 +663,6 @@ export default function RecordingsSection({ canEditContent = false, course, isAd
         }
       } catch (error) {
         if (!ignore) {
-          if (!isAdminMode && error.code === RECORDINGS_PASSWORD_REQUIRED_CODE) {
-            setRecordings([])
-            setLoadState({ loading: false, error: '' })
-            setPasswordGate({ required: true, unlocking: false, error: '' })
-            return
-          }
-
           setRecordings([])
           setLoadState({ loading: false, error: error.message })
         }
@@ -742,7 +674,7 @@ export default function RecordingsSection({ canEditContent = false, course, isAd
     return () => {
       ignore = true
     }
-  }, [course.id, isAdminMode, recordingsReloadToken])
+  }, [course.id])
 
   const activeRecordingId = activeRecording?.id ?? ''
   const viewer = useMemo(() => ({
@@ -780,39 +712,7 @@ export default function RecordingsSection({ canEditContent = false, course, isAd
       setPlayback(playbackData)
       setPlaybackState({ loading: false, error: '' })
     } catch (error) {
-      if (!isAdminMode && error.code === RECORDINGS_PASSWORD_REQUIRED_CODE) {
-        setActiveRecording(null)
-        setPlaybackState({ loading: false, error: '' })
-        setPasswordGate({ required: true, unlocking: false, error: '' })
-        return
-      }
-
       setPlaybackState({ loading: false, error: error.message })
-    }
-  }
-
-  async function handleUnlockRecordings(event) {
-    event.preventDefault()
-
-    const password = recordingsPassword.trim()
-    if (!password) {
-      setPasswordGate((current) => ({ ...current, error: 'יש להזין סיסמה' }))
-      return
-    }
-
-    setPasswordGate((current) => ({ ...current, unlocking: true, error: '' }))
-
-    try {
-      await unlockRecordings({ courseId: course.id, password })
-      setRecordingsPassword('')
-      setPasswordGate({ required: false, unlocking: false, error: '' })
-      setRecordingsReloadToken((current) => current + 1)
-    } catch (error) {
-      setPasswordGate((current) => ({
-        ...current,
-        unlocking: false,
-        error: error.message || 'לא ניתן לפתוח את ההקלטות',
-      }))
     }
   }
 
@@ -829,17 +729,7 @@ export default function RecordingsSection({ canEditContent = false, course, isAd
         />
       )}
 
-      {passwordGate.required && !isAdminMode && (
-        <RecordingsPasswordGate
-          error={passwordGate.error}
-          isSubmitting={passwordGate.unlocking}
-          onPasswordChange={setRecordingsPassword}
-          onSubmit={handleUnlockRecordings}
-          password={recordingsPassword}
-        />
-      )}
-
-      {!passwordGate.required && activeRecording && (
+      {activeRecording && (
         <div className="mb-5 overflow-hidden rounded-2xl border border-border bg-white shadow-sm">
           <div className="border-b border-border px-4 py-3">
             <div className="text-sm font-semibold text-text">{activeRecording.title}</div>
@@ -902,13 +792,13 @@ export default function RecordingsSection({ canEditContent = false, course, isAd
         </div>
       )}
 
-      {loadState.error && !isAdminMode && recordings.length === 0 && !passwordGate.required && (
+      {loadState.error && !isAdminMode && recordings.length === 0 && (
         <div className="mb-4 rounded-xl border border-danger/20 bg-danger/10 px-4 py-3 text-sm text-danger">
           {loadState.error}
         </div>
       )}
 
-      {passwordGate.required && !isAdminMode ? null : loadState.loading ? (
+      {loadState.loading ? (
         <div className="rounded-2xl border border-border bg-surface p-10 text-center text-sm font-semibold text-text-muted shadow-sm">
           טוען הקלטות...
         </div>
