@@ -34,11 +34,14 @@ const studentSessionDays = Number.isFinite(configuredStudentSessionDays)
   ? Math.max(1, configuredStudentSessionDays)
   : 30
 const disabledAuthValues = new Set(['0', 'false', 'no', 'off'])
-const defaultCourseChoiceCourseIds = ['computational', 'probability']
+const passwordOnlyCourseChoiceCourseIds = ['computational']
+const passwordOnlyCourseChoiceCourseIdSet = new Set(passwordOnlyCourseChoiceCourseIds)
+const defaultCourseChoiceCourseIds = ['probability']
 const configuredCourseChoiceCourseIds = normalizeCourseIds(
   process.env.STUDENT_PHONE_LOGIN_COURSE_IDS ?? process.env.STUDENT_PUBLIC_COURSE_IDS ?? defaultCourseChoiceCourseIds,
 )
 const studentPhoneLoginCourseIds = [...new Set([...defaultCourseChoiceCourseIds, ...configuredCourseChoiceCourseIds])]
+  .filter((courseId) => !isPasswordOnlyCourseChoiceCourseId(courseId))
 const studentPhoneLoginCourseIdSet = new Set(studentPhoneLoginCourseIds)
 const studentPhoneAccessSecret = String(
   process.env.STUDENT_PHONE_ACCESS_SECRET ??
@@ -50,7 +53,7 @@ const studentPhoneAccessSecret = String(
 const modelRecordingsPassword = String(
   process.env.MODEL_RECORDINGS_PASSWORD ??
   process.env.RECORDINGS_PASSWORD ??
-  '231199',
+  '',
 ).trim()
 const modelRecordingsPasswordCourseIds = normalizeCourseIds(
   process.env.MODEL_RECORDINGS_PASSWORD_COURSE_IDS ??
@@ -120,6 +123,16 @@ function normalizeCourseIds(value) {
   return [...new Set(values
     .map((item) => String(item ?? '').trim())
     .filter(Boolean))]
+}
+
+function isPasswordOnlyCourseChoiceCourseId(courseId) {
+  const normalizedCourseId = String(courseId ?? '').trim()
+  if (!normalizedCourseId) return false
+  if (passwordOnlyCourseChoiceCourseIdSet.has(normalizedCourseId)) return true
+
+  return passwordOnlyCourseChoiceCourseIds.some((rootId) => (
+    normalizedCourseId.startsWith(`${rootId}-group-`)
+  ))
 }
 
 function rootCourseId(course) {
@@ -695,6 +708,7 @@ function isRecordingsPasswordProtectedCourseId(courseId) {
 
   const normalizedCourseId = String(courseId ?? '').trim()
   if (!normalizedCourseId) return false
+  if (isPasswordOnlyCourseChoiceCourseId(normalizedCourseId)) return false
   if (modelRecordingsPasswordCourseIdSet.has(normalizedCourseId)) return true
 
   return modelRecordingsPasswordCourseIds.some((rootId) => (

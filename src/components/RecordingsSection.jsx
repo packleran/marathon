@@ -139,7 +139,7 @@ function RecordingsPasswordGate({
         </div>
         <div>
           <h2 className="text-base font-semibold text-text">הקלטות נעולות</h2>
-          <p className="mt-1 text-sm text-text-muted">יש להזין סיסמה כדי לצפות בהקלטות של מודלים.</p>
+          <p className="mt-1 text-sm text-text-muted">יש להזין סיסמה כדי לצפות בהקלטות.</p>
         </div>
       </div>
 

@@ -37,7 +37,7 @@ const contentTabs = [
 ]
 
 const loginCourseOptions = [
-  { id: 'computational', label: 'מודלים', mode: 'course-choice' },
+  { id: 'computational', label: 'מודלים', mode: 'password' },
   { id: 'probability', label: 'הסתברות', mode: 'course-choice' },
   { id: 'algorithms', label: 'אלגוריתמים', mode: 'password' },
   { id: 'algorithms-boost', label: 'תגבור', mode: 'course-choice', sourceCourseId: 'algorithms' },

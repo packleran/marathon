@@ -24,7 +24,7 @@ The server serves `dist/` and exposes `/api/*` for shared content, uploads, and 
 
 Student access is controlled from the admin UI. After a student pays, open the admin service, choose the student's course, add the student's phone number, and generate or set an initial password. The student site uses the phone number as the username and stores only a password hash in Postgres. Students in password-protected courses can sign in from multiple browsers or devices at the same time. Students only see courses assigned to their account.
 
-Computational Models and Probability use open course-choice access on the student site and do not require a password, username, phone number, or approved-phone allowlist. The student entry screen offers the available open groups, such as `מודלים ראש קבוצה יובל`, `מודלים ראש קבוצה שחר`, and `הסתברות`, and also exposes an Algorithms `תגבור` group when a custom Algorithms course includes `תגבור` in its name. The selected group is the only course shown afterward.
+Computational Models and Algorithms use username/password access. Open the matching group from the admin UI, add the student's phone number, and generate or set the password. Probability still uses open course-choice access, and the student entry screen also exposes an Algorithms `תגבור` group when a custom Algorithms course includes `תגבור` in its name. Open course-choice groups do not require a password.
 
 ## Railway layout
 
@@ -98,10 +98,10 @@ VITE_MUX_ENV_KEY=<mux-environment-key>
 
 `STUDENT_AUTH_REQUIRED=false` can temporarily disable the student login gate, but production should leave it enabled.
 
-Computational Models and Probability are always enabled for open course-choice login. `STUDENT_PHONE_LOGIN_COURSE_IDS` is still accepted as a legacy comma-separated list for adding more open root course ids, but it is no longer needed for `computational` or `probability`.
+Probability is enabled for open course-choice login. `STUDENT_PHONE_LOGIN_COURSE_IDS` is still accepted as a legacy comma-separated list for adding more open root course ids, but `computational` is always treated as username/password access even if it appears in that legacy variable.
 
 `STUDENT_PHONE_ACCESS_SECRET` signs the open course-choice access cookie. If omitted, the server falls back to another server-side secret, but setting it explicitly is recommended.
 
-Computational Models recordings are additionally locked behind a recordings password. By default, `MODEL_RECORDINGS_PASSWORD` is `231199` and `MODEL_RECORDINGS_PASSWORD_COURSE_IDS` is `computational`, which also covers duplicated `computational-group-*` courses. Set `MODEL_RECORDINGS_PASSWORD_SECRET` explicitly to sign the recordings access cookie with a stable server-side secret.
+`MODEL_RECORDINGS_PASSWORD` is optional and disabled when empty. If set, it adds a shared extra recordings password for the course ids in `MODEL_RECORDINGS_PASSWORD_COURSE_IDS`; it is ignored for Computational Models because that course now uses username/password access.
 
 `MUX_TOKEN_ID` and `MUX_TOKEN_SECRET` are needed only where recordings are created or synced with Mux. The student service only needs the signing key so it can generate playback tokens after authorization.
