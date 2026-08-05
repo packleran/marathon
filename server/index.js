@@ -60,6 +60,7 @@ const whatsAppTemplateLanguage = process.env.WHATSAPP_TEMPLATE_LANGUAGE ?? 'he'
 const smtpHost = process.env.SMTP_HOST ?? ''
 const smtpPort = Number(process.env.SMTP_PORT ?? 587)
 const smtpSecure = String(process.env.SMTP_SECURE ?? '').toLowerCase() === 'true'
+const smtpFamily = Number(process.env.SMTP_FAMILY ?? 4)
 const smtpUser = process.env.SMTP_USER ?? ''
 const smtpPass = process.env.SMTP_PASS ?? ''
 const mailFrom = process.env.MAIL_FROM ?? process.env.SMTP_FROM ?? smtpUser
@@ -653,6 +654,10 @@ function getMailTransport() {
     host: smtpHost,
     port: Number.isFinite(smtpPort) ? smtpPort : 587,
     secure: smtpSecure,
+    family: smtpFamily === 6 ? 6 : 4,
+    connectionTimeout: Number(process.env.SMTP_CONNECTION_TIMEOUT_MS ?? 15000),
+    greetingTimeout: Number(process.env.SMTP_GREETING_TIMEOUT_MS ?? 15000),
+    socketTimeout: Number(process.env.SMTP_SOCKET_TIMEOUT_MS ?? 30000),
     auth: smtpUser || smtpPass ? { user: smtpUser, pass: smtpPass } : undefined,
   })
 
