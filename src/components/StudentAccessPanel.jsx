@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
+  approveStudentAccessRequest,
   createStudent,
+  listStudentAccessRequests,
   listStudents,
+  rejectStudentAccessRequest,
   resetStudentPassword,
   revokeStudentSessions,
   updateStudent,
@@ -71,8 +74,17 @@ function appendWhatsAppStatus(text, whatsApp) {
   return `${text}. ${whatsApp.text}`
 }
 
+function appendMailStatus(text, mail) {
+  if (!mail) return text
+  return `${text}. ${mail.text}`
+}
+
 function firstCourseId(student) {
   return Array.isArray(student.courseIds) ? student.courseIds[0] ?? '' : ''
+}
+
+function primaryLogin(student) {
+  return student?.username || student?.phone || student?.email || ''
 }
 
 function isPhoneLoginCourseId(courseId, phoneLoginCourseIdSet = new Set()) {
@@ -99,7 +111,7 @@ function createCredentialsMessage(credentials) {
   return [
     `שלום${credentials.name ? ` ${credentials.name}` : ''},`,
     'פרטי הכניסה שלך לאתר המרתון:',
-    `שם משתמש: ${credentials.phone}`,
+    `שם משתמש: ${credentials.username || credentials.phone || credentials.email}`,
     `סיסמה: ${credentials.password}`,
     credentials.courseName ? `קורס: ${credentials.courseName}` : null,
   ].filter(Boolean).join('\n')
@@ -114,10 +126,13 @@ function createWhatsAppWebUrl(credentials) {
 
 export default function StudentAccessPanel({ courses = [], phoneLoginCourseIds = [] }) {
   const [students, setStudents] = useState([])
-  const [form, setForm] = useState({ phone: '', name: '', courseId: '', password: '' })
+  const [accessRequests, setAccessRequests] = useState([])
+  const [requestCourseIds, setRequestCourseIds] = useState({})
+  const [form, setForm] = useState({ phone: '', email: '', name: '', courseId: '', password: '' })
   const [passwordMode, setPasswordMode] = useState('auto')
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
+  const [requestActionId, setRequestActionId] = useState('')
   const [status, setStatus] = useState(null)
   const [credentials, setCredentials] = useState(null)
 
@@ -126,6 +141,10 @@ export default function StudentAccessPanel({ courses = [], phoneLoginCourseIds =
     [students],
   )
   const selectedCourseId = form.courseId || (courses[0]?.id ? String(courses[0].id) : '')
+  const pendingAccessRequests = useMemo(
+    () => accessRequests.filter((request) => request.status === 'pending'),
+    [accessRequests],
+  )
   const phoneLoginCourseIdSet = useMemo(
     () => new Set(phoneLoginCourseIds.map(String)),
     [phoneLoginCourseIds],
@@ -137,9 +156,13 @@ export default function StudentAccessPanel({ courses = [], phoneLoginCourseIds =
     async function loadStudents() {
       setIsLoading(true)
       try {
-        const loadedStudents = await listStudents()
+        const [loadedStudents, loadedAccessRequests] = await Promise.all([
+          listStudents(),
+          listStudentAccessRequests(),
+        ])
         if (!ignore) {
           setStudents(loadedStudents)
+          setAccessRequests(loadedAccessRequests)
           setStatus(null)
         }
       } catch {
@@ -166,6 +189,8 @@ export default function StudentAccessPanel({ courses = [], phoneLoginCourseIds =
     const courseId = firstCourseId(student)
 
     return {
+      username: primaryLogin(student),
+      email: student.email,
       phone: student.phone,
       name: student.name,
       password,
@@ -183,13 +208,14 @@ export default function StudentAccessPanel({ courses = [], phoneLoginCourseIds =
     try {
       const data = await createStudent({
         phone: form.phone,
+        email: form.email,
         name: form.name,
         courseIds: [selectedCourseId],
         password: passwordMode === 'manual' ? form.password : '',
       })
       setStudents((current) => upsertStudent(current, data.student))
       setCredentials(createCredentialsPayload(data.student, data.password, data.whatsApp))
-      setForm({ phone: '', name: '', courseId: '', password: '' })
+      setForm({ phone: '', email: '', name: '', courseId: '', password: '' })
       setPasswordMode('auto')
       setStatus({
         type: whatsAppStatusType(data.whatsApp),
@@ -202,8 +228,71 @@ export default function StudentAccessPanel({ courses = [], phoneLoginCourseIds =
     }
   }
 
+  function setAccessRequestCourseId(requestId, courseId) {
+    setRequestCourseIds((current) => ({ ...current, [requestId]: courseId }))
+  }
+
+  async function handleApproveAccessRequest(accessRequest) {
+    const courseId = requestCourseIds[accessRequest.id] || selectedCourseId
+    if (!courseId) {
+      setStatus({ type: 'error', text: 'יש לבחור קורס לפני אישור הבקשה' })
+      return
+    }
+
+    setStatus(null)
+    setCredentials(null)
+    setRequestActionId(accessRequest.id)
+
+    try {
+      const data = await approveStudentAccessRequest(accessRequest.id, { courseIds: [courseId] })
+      if (data.student) {
+        setStudents((current) => upsertStudent(current, data.student))
+        setCredentials({
+          username: data.username || primaryLogin(data.student),
+          email: data.student.email,
+          phone: data.student.phone,
+          name: data.student.name,
+          password: data.password,
+          courseName: courseName(courses, courseId, phoneLoginCourseIdSet),
+          whatsApp: null,
+        })
+      }
+      setAccessRequests((current) => current.map((request) => (
+        request.id === accessRequest.id ? data.accessRequest : request
+      )).filter(Boolean))
+      setStatus({
+        type: data.mail?.status === 'sent' ? 'success' : 'error',
+        text: appendMailStatus('הבקשה אושרה ונוצר משתמש', data.mail),
+      })
+    } catch (error) {
+      setStatus({ type: 'error', text: error.message })
+    } finally {
+      setRequestActionId('')
+    }
+  }
+
+  async function handleRejectAccessRequest(accessRequest) {
+    if (!window.confirm(`לדחות את בקשת הגישה של ${accessRequest.fullName}?`)) return
+
+    setStatus(null)
+    setCredentials(null)
+    setRequestActionId(accessRequest.id)
+
+    try {
+      const data = await rejectStudentAccessRequest(accessRequest.id)
+      setAccessRequests((current) => current.map((request) => (
+        request.id === accessRequest.id ? data.accessRequest : request
+      )).filter(Boolean))
+      setStatus({ type: 'success', text: 'הבקשה נדחתה' })
+    } catch (error) {
+      setStatus({ type: 'error', text: error.message })
+    } finally {
+      setRequestActionId('')
+    }
+  }
+
   async function handleResetPassword(student) {
-    if (!window.confirm(`לאפס סיסמה ל-${student.phone}?`)) return
+    if (!window.confirm(`לאפס סיסמה ל-${primaryLogin(student)}?`)) return
 
     setStatus(null)
     setCredentials(null)
@@ -223,7 +312,7 @@ export default function StudentAccessPanel({ courses = [], phoneLoginCourseIds =
 
   async function handleToggleActive(student) {
     const nextActive = !student.active
-    if (!nextActive && !window.confirm(`לחסום את הגישה של ${student.phone}?`)) return
+    if (!nextActive && !window.confirm(`לחסום את הגישה של ${primaryLogin(student)}?`)) return
 
     setStatus(null)
 
@@ -254,7 +343,7 @@ export default function StudentAccessPanel({ courses = [], phoneLoginCourseIds =
   }
 
   async function handleRevokeSessions(student) {
-    if (!window.confirm(`לנתק את כל החיבורים הפעילים של ${student.phone}?`)) return
+    if (!window.confirm(`לנתק את כל החיבורים הפעילים של ${primaryLogin(student)}?`)) return
 
     setStatus(null)
 
@@ -305,7 +394,7 @@ export default function StudentAccessPanel({ courses = [], phoneLoginCourseIds =
         </div>
       </div>
 
-      <form noValidate onSubmit={handleCreateStudent} className="grid gap-3 lg:grid-cols-[1fr_1fr_1fr_1.2fr_auto] lg:items-end">
+      <form noValidate onSubmit={handleCreateStudent} className="grid gap-3 lg:grid-cols-[1fr_1fr_1fr_1fr_1.2fr_auto] lg:items-end">
         <label className="text-xs font-semibold uppercase tracking-wider text-text-muted">
           טלפון
           <input
@@ -315,6 +404,17 @@ export default function StudentAccessPanel({ courses = [], phoneLoginCourseIds =
             placeholder="0521234567"
             className="mt-1.5 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm font-normal text-text outline-none focus:border-primary focus:ring-2 focus:ring-primary-soft"
             required
+          />
+        </label>
+
+        <label className="text-xs font-semibold uppercase tracking-wider text-text-muted">
+          מייל
+          <input
+            value={form.email}
+            onChange={(event) => updateForm('email', event.target.value)}
+            type="email"
+            placeholder="student@example.com"
+            className="mt-1.5 w-full rounded-xl border border-border bg-white px-3 py-2 text-sm font-normal text-text outline-none focus:border-primary focus:ring-2 focus:ring-primary-soft"
           />
         </label>
 
@@ -389,13 +489,79 @@ export default function StudentAccessPanel({ courses = [], phoneLoginCourseIds =
         </button>
       </form>
 
+      {pendingAccessRequests.length > 0 && (
+        <div className="mt-5 overflow-hidden rounded-xl border border-primary/20">
+          <div className="grid grid-cols-[1fr_auto] gap-3 bg-primary-soft px-4 py-2 text-xs font-semibold text-primary md:grid-cols-[1.2fr_1.2fr_1fr_auto]">
+            <span>בקשת גישה</span>
+            <span className="hidden md:block">מייל</span>
+            <span className="hidden md:block">קורס</span>
+            <span>פעולות</span>
+          </div>
+          <div className="divide-y divide-primary/10">
+            {pendingAccessRequests.map((accessRequest) => {
+              const requestCourseId = requestCourseIds[accessRequest.id] || selectedCourseId
+              const isRequestSaving = requestActionId === accessRequest.id
+
+              return (
+                <div
+                  key={accessRequest.id}
+                  className="grid grid-cols-[1fr_auto] gap-3 px-4 py-3 text-sm md:grid-cols-[1.2fr_1.2fr_1fr_auto] md:items-center"
+                >
+                  <div>
+                    <div className="font-semibold text-text">{accessRequest.fullName}</div>
+                    <div className="mt-1 text-xs text-text-muted">{formatDate(accessRequest.createdAt)}</div>
+                  </div>
+                  <div className="hidden font-mono text-xs text-text-2 md:block" dir="ltr">
+                    {accessRequest.email}
+                  </div>
+                  <div className="hidden md:block">
+                    <select
+                      value={requestCourseId}
+                      onChange={(event) => setAccessRequestCourseId(accessRequest.id, event.target.value)}
+                      className="w-full rounded-lg border border-border bg-white px-2.5 py-2 text-xs font-medium text-text outline-none focus:border-primary focus:ring-2 focus:ring-primary-soft"
+                      aria-label={`בחירת קורס עבור ${accessRequest.fullName}`}
+                    >
+                      {courses.map((course) => (
+                        <option key={course.id} value={course.id}>
+                          {courseName(courses, course.id, phoneLoginCourseIdSet)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleApproveAccessRequest(accessRequest)}
+                      disabled={isRequestSaving || !requestCourseId}
+                      className="inline-flex items-center gap-2 rounded-lg border border-success/20 bg-white px-3 py-2 text-xs font-medium text-success shadow-sm transition-colors hover:bg-success/10 disabled:cursor-not-allowed disabled:opacity-40 cursor-pointer"
+                    >
+                      <CheckIcon />
+                      אשר
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleRejectAccessRequest(accessRequest)}
+                      disabled={isRequestSaving}
+                      className="inline-flex items-center gap-2 rounded-lg border border-danger/20 bg-white px-3 py-2 text-xs font-medium text-danger shadow-sm transition-colors hover:bg-danger/10 disabled:cursor-not-allowed disabled:opacity-40 cursor-pointer"
+                    >
+                      <BlockIcon />
+                      דחה
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       {(status || credentials) && (
         <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           {credentials && (
             <div className="rounded-xl border border-success/20 bg-success/10 px-4 py-3 text-sm text-text">
               <div className="font-semibold text-success">פרטי כניסה למסירה לסטודנט</div>
               <div className="mt-1 font-mono text-[13px]" dir="ltr">
-                {credentials.phone} / {credentials.password}
+                {credentials.username || credentials.phone || credentials.email} / {credentials.password}
               </div>
               {credentials.whatsApp && credentials.whatsApp.status !== 'skipped' && (
                 <div className={`mt-2 text-xs ${
@@ -409,14 +575,16 @@ export default function StudentAccessPanel({ courses = [], phoneLoginCourseIds =
           <div className="flex flex-wrap items-center gap-2">
             {credentials && (
               <>
-                <button
-                  type="button"
-                  onClick={handleOpenWhatsAppWeb}
-                  className="inline-flex items-center gap-2 rounded-lg border border-success/30 bg-white px-3 py-2 text-xs font-medium text-success shadow-sm transition-colors hover:border-success/50 hover:bg-success/10 cursor-pointer"
-                >
-                  <WhatsAppIcon />
-                  WhatsApp Web
-                </button>
+                {credentials.phone && (
+                  <button
+                    type="button"
+                    onClick={handleOpenWhatsAppWeb}
+                    className="inline-flex items-center gap-2 rounded-lg border border-success/30 bg-white px-3 py-2 text-xs font-medium text-success shadow-sm transition-colors hover:border-success/50 hover:bg-success/10 cursor-pointer"
+                  >
+                    <WhatsAppIcon />
+                    WhatsApp Web
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={handleCopyCredentials}
@@ -438,7 +606,7 @@ export default function StudentAccessPanel({ courses = [], phoneLoginCourseIds =
 
       <div className="mt-5 overflow-hidden rounded-xl border border-border-subtle">
         <div className="grid grid-cols-[1fr_auto] gap-3 bg-inset px-4 py-2 text-xs font-semibold text-text-muted md:grid-cols-[1.1fr_1fr_1fr_1fr_auto]">
-          <span>טלפון</span>
+          <span>משתמש</span>
           <span className="hidden md:block">שם</span>
           <span className="hidden md:block">קורס</span>
           <span className="hidden md:block">חיבור</span>
@@ -457,7 +625,12 @@ export default function StudentAccessPanel({ courses = [], phoneLoginCourseIds =
                 className="grid grid-cols-[1fr_auto] gap-3 px-4 py-3 text-sm md:grid-cols-[1.1fr_1fr_1fr_1fr_auto] md:items-center"
               >
                 <div>
-                  <div className="font-mono text-[13px] font-semibold text-text" dir="ltr">{student.phone}</div>
+                  <div className="font-mono text-[13px] font-semibold text-text" dir="ltr">{primaryLogin(student)}</div>
+                  {(student.email || student.phone) && (
+                    <div className="mt-1 font-mono text-xs text-text-muted" dir="ltr">
+                      {student.email || student.phone}
+                    </div>
+                  )}
                   <div className={`mt-1 text-xs ${student.active ? 'text-success' : 'text-danger'}`}>
                     {student.active ? 'פעיל' : 'חסום'}
                   </div>
@@ -468,7 +641,7 @@ export default function StudentAccessPanel({ courses = [], phoneLoginCourseIds =
                     value={firstCourseId(student)}
                     onChange={(event) => handleUpdateCourse(student, event.target.value)}
                     className="w-full rounded-lg border border-border bg-white px-2.5 py-2 text-xs font-medium text-text outline-none focus:border-primary focus:ring-2 focus:ring-primary-soft"
-                    aria-label={`שיוך קורס עבור ${student.phone}`}
+                    aria-label={`שיוך קורס עבור ${primaryLogin(student)}`}
                   >
                     <option value="" disabled>ללא קורס</option>
                     {courses.map((course) => (

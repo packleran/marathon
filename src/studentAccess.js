@@ -63,11 +63,30 @@ export async function listStudents() {
   return data.students ?? []
 }
 
-export async function createStudent({ phone, name, courseIds, password }) {
+export async function listStudentAccessRequests() {
+  const data = await fetchJson('/api/student-access-requests')
+  return data.requests ?? []
+}
+
+export async function approveStudentAccessRequest(requestId, { courseIds }) {
+  return fetchJson(`/api/student-access-requests/${encodeURIComponent(requestId)}/approve`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ courseIds }),
+  })
+}
+
+export async function rejectStudentAccessRequest(requestId) {
+  return fetchJson(`/api/student-access-requests/${encodeURIComponent(requestId)}/reject`, {
+    method: 'POST',
+  })
+}
+
+export async function createStudent({ phone, email, name, courseIds, password }) {
   return fetchJson('/api/students', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ phone, name, courseIds, password }),
+    body: JSON.stringify({ phone, email, name, courseIds, password }),
   })
 }
 

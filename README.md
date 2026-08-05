@@ -22,7 +22,7 @@ npm start
 
 The server serves `dist/` and exposes `/api/*` for shared content, uploads, and meeting requests.
 
-Student access is controlled from the admin UI. After a student pays, open the admin service, choose the student's course, add the student's phone number, and generate or set an initial password. The student site uses the phone number as the username and stores only a password hash in Postgres. Students in password-protected courses can sign in from multiple browsers or devices at the same time. Students only see courses assigned to their account.
+Student access can be requested from `/student-login`. A student enters a full name and email address; the server saves a pending request and emails the admin an approval link. When the admin approves and chooses a course, the server creates or updates the student account, generates a username and password, stores only the password hash in Postgres, and emails the credentials to the student. Existing phone-based student accounts continue to work; their username is backfilled from the phone number.
 
 Computational Models and Algorithms use username/password access. Open the matching group from the admin UI, add the student's phone number, and generate or set the password. Probability still uses open course-choice access, and the student entry screen also exposes an Algorithms `תגבור` group when a custom Algorithms course includes `תגבור` in its name. Open course-choice groups do not require a password.
 
@@ -50,7 +50,18 @@ WHATSAPP_PHONE_NUMBER_ID=<meta-phone-number-id>
 WHATSAPP_ACCESS_TOKEN=<meta-whatsapp-access-token>
 WHATSAPP_TEMPLATE_NAME=student_login_details
 WHATSAPP_TEMPLATE_LANGUAGE=he
+SMTP_HOST=<smtp-host>
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=<smtp-user>
+SMTP_PASS=<smtp-password>
+MAIL_FROM="Marathon <no-reply@example.com>"
+ACCESS_REQUEST_ADMIN_EMAIL=<your-approval-email>
+ACCESS_REQUEST_ADMIN_BASE_URL=https://<admin-service-domain>
+STUDENT_PUBLIC_BASE_URL=https://<student-service-domain>
 ```
+
+`ACCESS_REQUEST_ADMIN_EMAIL` receives new access requests. `ACCESS_REQUEST_ADMIN_BASE_URL` should point at the admin deployment so approval links open in the protected admin service. `STUDENT_PUBLIC_BASE_URL` is used in the credential email sent to the student. Configure the SMTP and access-request variables on both Railway services: the student service sends the admin approval email, and the admin service sends the approved student's credentials.
 
 WhatsApp credential messages use the Meta WhatsApp Cloud API and must be sent with an approved template. The default template name is `student_login_details`, with three body variables:
 
@@ -92,6 +103,15 @@ MUX_SIGNING_KEY_ID=<mux-signing-key-id>
 MUX_SIGNING_PRIVATE_KEY=<mux-signing-private-key>
 MUX_ENV_KEY=<mux-environment-key>
 VITE_MUX_ENV_KEY=<mux-environment-key>
+SMTP_HOST=<smtp-host>
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=<smtp-user>
+SMTP_PASS=<smtp-password>
+MAIL_FROM="Marathon <no-reply@example.com>"
+ACCESS_REQUEST_ADMIN_EMAIL=<your-approval-email>
+ACCESS_REQUEST_ADMIN_BASE_URL=https://<admin-service-domain>
+STUDENT_PUBLIC_BASE_URL=https://<student-service-domain>
 ```
 
 `APP_ROLE` protects the server API. `VITE_APP_ROLE` controls which UI is built.
