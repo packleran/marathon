@@ -89,7 +89,6 @@ const pool = databaseUrl
   : null
 
 let dbReadyPromise = null
-let mailTransportPromise = null
 const contentEventClients = new Set()
 
 function createId() {
@@ -647,31 +646,35 @@ function isMailConfigured() {
   return Boolean(smtpHost && mailFrom)
 }
 
-async function getMailTransport() {
+async function createMailTransport() {
   if (!isMailConfigured()) return null
-  if (mailTransportPromise) return mailTransportPromise
 
-  mailTransportPromise = (async () => {
-    const family = smtpFamily === 6 ? 6 : 4
-    const resolvedHost = family === 4 && !/^\d+\.\d+\.\d+\.\d+$/.test(smtpHost)
-      ? (await dns.resolve4(smtpHost))[0] ?? smtpHost
-      : smtpHost
+  const family = smtpFamily === 6 ? 6 : 4
+  const resolvedHost = family === 4 && !/^\d+\.\d+\.\d+\.\d+$/.test(smtpHost)
+    ? (await dns.resolve4(smtpHost))[0] ?? smtpHost
+    : smtpHost
 
-    return nodemailer.createTransport({
-      host: resolvedHost,
-      port: Number.isFinite(smtpPort) ? smtpPort : 587,
-      secure: smtpSecure,
-      family,
-      connectionTimeout: Number(process.env.SMTP_CONNECTION_TIMEOUT_MS ?? 15000),
-      greetingTimeout: Number(process.env.SMTP_GREETING_TIMEOUT_MS ?? 15000),
-      socketTimeout: Number(process.env.SMTP_SOCKET_TIMEOUT_MS ?? 30000),
-      servername: smtpHost,
-      tls: { servername: smtpHost },
-      auth: smtpUser || smtpPass ? { user: smtpUser, pass: smtpPass } : undefined,
-    })
-  })()
+  return nodemailer.createTransport({
+    host: resolvedHost,
+    port: Number.isFinite(smtpPort) ? smtpPort : 587,
+    secure: smtpSecure,
+    family,
+    connectionTimeout: Number(process.env.SMTP_CONNECTION_TIMEOUT_MS ?? 10000),
+    greetingTimeout: Number(process.env.SMTP_GREETING_TIMEOUT_MS ?? 10000),
+    socketTimeout: Number(process.env.SMTP_SOCKET_TIMEOUT_MS ?? 15000),
+    servername: smtpHost,
+    tls: { servername: smtpHost },
+    auth: smtpUser || smtpPass ? { user: smtpUser, pass: smtpPass } : undefined,
+  })
+}
 
-  return mailTransportPromise
+function withTimeout(promise, timeoutMs, message) {
+  let timeout
+  const timeoutPromise = new Promise((_, reject) => {
+    timeout = setTimeout(() => reject(new Error(message)), timeoutMs)
+  })
+
+  return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeout))
 }
 
 function escapeHtml(value) {
@@ -692,19 +695,27 @@ async function sendMail({ to, subject, text, html }) {
     return createMailStatus('skipped', 'לא הוגדרה כתובת מייל לשליחה')
   }
 
+  let transport = null
   try {
-    const transport = await getMailTransport()
-    const info = await transport.sendMail({
-      from: mailFrom,
-      to,
-      subject,
-      text,
-      html,
-    })
+    const sendTimeoutMs = Number(process.env.SMTP_SEND_TIMEOUT_MS ?? 12000)
+    const info = await withTimeout((async () => {
+      transport = await createMailTransport()
+      return transport.sendMail({
+        from: mailFrom,
+        to,
+        subject,
+        text,
+        html,
+      })
+    })(), sendTimeoutMs, `SMTP timed out after ${sendTimeoutMs}ms`)
 
     return createMailStatus('sent', 'המייל נשלח', { messageId: info.messageId })
   } catch (error) {
     return createMailStatus('failed', `שליחת המייל נכשלה: ${error.message}`)
+  } finally {
+    if (transport) {
+      transport.close()
+    }
   }
 }
 
