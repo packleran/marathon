@@ -646,26 +646,39 @@ function isMailConfigured() {
   return Boolean(smtpHost && mailFrom)
 }
 
-async function createMailTransport() {
+async function createMailTransport(options = {}) {
   if (!isMailConfigured()) return null
 
+  const host = options.host ?? smtpHost
+  const port = Number(options.port ?? smtpPort)
+  const secure = options.secure ?? smtpSecure
   const family = smtpFamily === 6 ? 6 : 4
-  const resolvedHost = family === 4 && !/^\d+\.\d+\.\d+\.\d+$/.test(smtpHost)
-    ? (await dns.resolve4(smtpHost))[0] ?? smtpHost
-    : smtpHost
+  const resolvedHost = family === 4 && !/^\d+\.\d+\.\d+\.\d+$/.test(host)
+    ? (await dns.resolve4(host))[0] ?? host
+    : host
 
   return nodemailer.createTransport({
     host: resolvedHost,
-    port: Number.isFinite(smtpPort) ? smtpPort : 587,
-    secure: smtpSecure,
+    port: Number.isFinite(port) ? port : 587,
+    secure,
+    requireTLS: options.requireTLS ?? (!secure && port === 587),
     family,
     connectionTimeout: Number(process.env.SMTP_CONNECTION_TIMEOUT_MS ?? 10000),
     greetingTimeout: Number(process.env.SMTP_GREETING_TIMEOUT_MS ?? 10000),
     socketTimeout: Number(process.env.SMTP_SOCKET_TIMEOUT_MS ?? 15000),
-    servername: smtpHost,
-    tls: { servername: smtpHost },
+    servername: host,
+    tls: { servername: host },
     auth: smtpUser || smtpPass ? { user: smtpUser, pass: smtpPass } : undefined,
   })
+}
+
+function getMailTransportAttempts() {
+  const attempts = [{ host: smtpHost, port: smtpPort, secure: smtpSecure }]
+  if (smtpHost === 'smtp.gmail.com' && smtpPort !== 587) {
+    attempts.push({ host: smtpHost, port: 587, secure: false, requireTLS: true })
+  }
+
+  return attempts
 }
 
 function withTimeout(promise, timeoutMs, message) {
@@ -696,18 +709,35 @@ async function sendMail({ to, subject, text, html }) {
   }
 
   let transport = null
+  let lastError = null
   try {
     const sendTimeoutMs = Number(process.env.SMTP_SEND_TIMEOUT_MS ?? 12000)
-    const info = await withTimeout((async () => {
-      transport = await createMailTransport()
-      return transport.sendMail({
-        from: mailFrom,
-        to,
-        subject,
-        text,
-        html,
-      })
-    })(), sendTimeoutMs, `SMTP timed out after ${sendTimeoutMs}ms`)
+    let info = null
+
+    for (const attempt of getMailTransportAttempts()) {
+      try {
+        info = await withTimeout((async () => {
+          transport = await createMailTransport(attempt)
+          return transport.sendMail({
+            from: mailFrom,
+            to,
+            subject,
+            text,
+            html,
+          })
+        })(), sendTimeoutMs, `SMTP timed out after ${sendTimeoutMs}ms`)
+        break
+      } catch (error) {
+        lastError = error
+      } finally {
+        if (transport) {
+          transport.close()
+          transport = null
+        }
+      }
+    }
+
+    if (!info) throw lastError ?? new Error('SMTP send failed')
 
     return createMailStatus('sent', 'המייל נשלח', { messageId: info.messageId })
   } catch (error) {
