@@ -1,5 +1,6 @@
 import express from 'express'
 import multer from 'multer'
+import dns from 'node:dns/promises'
 import path from 'node:path'
 import { createHash, createHmac, createSign, randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
@@ -88,7 +89,7 @@ const pool = databaseUrl
   : null
 
 let dbReadyPromise = null
-let mailTransport = null
+let mailTransportPromise = null
 const contentEventClients = new Set()
 
 function createId() {
@@ -646,22 +647,31 @@ function isMailConfigured() {
   return Boolean(smtpHost && mailFrom)
 }
 
-function getMailTransport() {
+async function getMailTransport() {
   if (!isMailConfigured()) return null
-  if (mailTransport) return mailTransport
+  if (mailTransportPromise) return mailTransportPromise
 
-  mailTransport = nodemailer.createTransport({
-    host: smtpHost,
-    port: Number.isFinite(smtpPort) ? smtpPort : 587,
-    secure: smtpSecure,
-    family: smtpFamily === 6 ? 6 : 4,
-    connectionTimeout: Number(process.env.SMTP_CONNECTION_TIMEOUT_MS ?? 15000),
-    greetingTimeout: Number(process.env.SMTP_GREETING_TIMEOUT_MS ?? 15000),
-    socketTimeout: Number(process.env.SMTP_SOCKET_TIMEOUT_MS ?? 30000),
-    auth: smtpUser || smtpPass ? { user: smtpUser, pass: smtpPass } : undefined,
-  })
+  mailTransportPromise = (async () => {
+    const family = smtpFamily === 6 ? 6 : 4
+    const resolvedHost = family === 4 && !/^\d+\.\d+\.\d+\.\d+$/.test(smtpHost)
+      ? (await dns.resolve4(smtpHost))[0] ?? smtpHost
+      : smtpHost
 
-  return mailTransport
+    return nodemailer.createTransport({
+      host: resolvedHost,
+      port: Number.isFinite(smtpPort) ? smtpPort : 587,
+      secure: smtpSecure,
+      family,
+      connectionTimeout: Number(process.env.SMTP_CONNECTION_TIMEOUT_MS ?? 15000),
+      greetingTimeout: Number(process.env.SMTP_GREETING_TIMEOUT_MS ?? 15000),
+      socketTimeout: Number(process.env.SMTP_SOCKET_TIMEOUT_MS ?? 30000),
+      servername: smtpHost,
+      tls: { servername: smtpHost },
+      auth: smtpUser || smtpPass ? { user: smtpUser, pass: smtpPass } : undefined,
+    })
+  })()
+
+  return mailTransportPromise
 }
 
 function escapeHtml(value) {
@@ -683,7 +693,8 @@ async function sendMail({ to, subject, text, html }) {
   }
 
   try {
-    const info = await getMailTransport().sendMail({
+    const transport = await getMailTransport()
+    const info = await transport.sendMail({
       from: mailFrom,
       to,
       subject,
