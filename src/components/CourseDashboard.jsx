@@ -208,7 +208,6 @@ function ModeToolbar({
 
 function StudentAccountBar({ student, onLogout }) {
   if (!student) return null
-  const loginLabel = student.username || student.phone || student.email || ''
 
   return (
     <div className="border-b border-border bg-white/85 backdrop-blur">
@@ -216,10 +215,10 @@ function StudentAccountBar({ student, onLogout }) {
         <div className="min-w-0">
           <div className="text-xs font-semibold text-text-muted">מחובר כסטודנט</div>
           <div className="truncate text-sm font-semibold text-text">
-            {student.name || loginLabel || 'קבוצה פתוחה'}
-            {student.name && loginLabel && (
+            {student.name || student.phone || 'קבוצה פתוחה'}
+            {student.name && student.phone && (
               <span className="mr-2 font-mono text-[13px] font-medium text-text-muted" dir="ltr">
-                {loginLabel}
+                {student.phone}
               </span>
             )}
           </div>

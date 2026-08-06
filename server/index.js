@@ -1,11 +1,9 @@
 import express from 'express'
 import multer from 'multer'
-import dns from 'node:dns/promises'
 import path from 'node:path'
 import { createHash, createHmac, createSign, randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
-import nodemailer from 'nodemailer'
 import pg from 'pg'
 import { courses } from '../src/data.js'
 
@@ -58,22 +56,6 @@ const whatsAppPhoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID ?? ''
 const whatsAppAccessToken = process.env.WHATSAPP_ACCESS_TOKEN ?? ''
 const whatsAppTemplateName = process.env.WHATSAPP_TEMPLATE_NAME ?? 'student_login_details'
 const whatsAppTemplateLanguage = process.env.WHATSAPP_TEMPLATE_LANGUAGE ?? 'he'
-const smtpHost = process.env.SMTP_HOST ?? ''
-const smtpPort = Number(process.env.SMTP_PORT ?? 587)
-const smtpSecure = String(process.env.SMTP_SECURE ?? '').toLowerCase() === 'true'
-const smtpFamily = Number(process.env.SMTP_FAMILY ?? 4)
-const smtpUser = process.env.SMTP_USER ?? ''
-const smtpPass = process.env.SMTP_PASS ?? ''
-const mailFrom = process.env.MAIL_FROM ?? process.env.SMTP_FROM ?? smtpUser
-const mailWebhookUrl = process.env.MAIL_WEBHOOK_URL ?? ''
-const mailWebhookSecret = process.env.MAIL_WEBHOOK_SECRET ?? ''
-const accessRequestAdminEmail = process.env.ACCESS_REQUEST_ADMIN_EMAIL ?? process.env.ADMIN_EMAIL ?? ''
-const accessRequestAdminBaseUrl = normalizeHttpOrigin(
-  process.env.ACCESS_REQUEST_ADMIN_BASE_URL ?? process.env.ADMIN_PUBLIC_URL ?? '',
-)
-const studentPublicBaseUrl = normalizeHttpOrigin(
-  process.env.STUDENT_PUBLIC_BASE_URL ?? process.env.STUDENT_PUBLIC_URL ?? '',
-)
 const muxTokenId = process.env.MUX_TOKEN_ID ?? ''
 const muxTokenSecret = process.env.MUX_TOKEN_SECRET ?? ''
 const muxSigningKeyId = process.env.MUX_SIGNING_KEY_ID ?? ''
@@ -117,44 +99,6 @@ function normalizePhone(value) {
 
 function isValidPhone(phone) {
   return phone.length >= 8 && phone.length <= 15
-}
-
-function normalizeEmail(value) {
-  return String(value ?? '').trim().toLowerCase()
-}
-
-function isValidEmail(email) {
-  return email.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
-}
-
-function normalizeLoginIdentifier(value) {
-  const rawValue = String(value ?? '').trim()
-  if (!rawValue) return { raw: '', phone: '', username: '' }
-
-  const phone = normalizePhone(rawValue)
-  const isPhoneLike = /^\+?[\d\s().-]+$/.test(rawValue) && isValidPhone(phone)
-
-  return {
-    raw: rawValue,
-    phone: isPhoneLike ? phone : '',
-    username: isPhoneLike ? phone : rawValue.toLowerCase(),
-  }
-}
-
-function isValidUsername(username) {
-  return /^[a-z0-9][a-z0-9._-]{2,39}$/i.test(String(username ?? ''))
-}
-
-function usernameSeedFromEmail(email) {
-  const [localPart = 'student'] = normalizeEmail(email).split('@')
-  const seed = localPart
-    .split('+')[0]
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, '.')
-    .replace(/^[._-]+|[._-]+$/g, '')
-    .slice(0, 24)
-
-  return isValidUsername(seed) ? seed : 'student'
 }
 
 function normalizeCourseIds(value) {
@@ -217,24 +161,6 @@ function generatePassword(length = 10) {
   return Array.from(bytes, (byte) => alphabet[byte % alphabet.length]).join('')
 }
 
-async function generateUniqueUsername(client, email) {
-  const seed = usernameSeedFromEmail(email)
-
-  for (let attempt = 0; attempt < 12; attempt += 1) {
-    const suffix = randomBytes(3).toString('hex')
-    const username = `${seed.slice(0, 24)}.${suffix}`.replace(/^[._-]+|[._-]+$/g, '')
-    if (!isValidUsername(username)) continue
-
-    const result = await client.query(
-      'SELECT 1 FROM marathon_students WHERE lower(username) = lower($1) LIMIT 1',
-      [username],
-    )
-    if (result.rowCount === 0) return username
-  }
-
-  return `student.${randomUUID().slice(0, 8).toLowerCase()}`
-}
-
 async function hashPassword(password) {
   const salt = randomBytes(16).toString('base64url')
   const derivedKey = await scrypt(password, salt, 64, passwordScryptOptions)
@@ -264,10 +190,6 @@ async function verifyPassword(password, storedHash) {
 }
 
 function hashSessionToken(token) {
-  return createHash('sha256').update(token).digest('hex')
-}
-
-function hashAccessRequestToken(token) {
   return createHash('sha256').update(token).digest('hex')
 }
 
@@ -598,9 +520,7 @@ function serializeStudent(row) {
 
   return {
     id: row.id,
-    phone: row.phone ?? '',
-    username: row.username || row.phone || '',
-    email: row.email ?? '',
+    phone: row.phone,
     name: row.name,
     active: row.active,
     courseIds,
@@ -620,260 +540,8 @@ function serializeStudent(row) {
   }
 }
 
-function serializeAccessRequest(row) {
-  return {
-    id: row.id,
-    fullName: row.full_name,
-    email: row.email,
-    status: row.status,
-    studentId: row.student_id ?? '',
-    createdAt: toIso(row.created_at),
-    updatedAt: toIso(row.updated_at),
-    notifiedAt: toIso(row.notified_at),
-    approvedAt: toIso(row.approved_at),
-    rejectedAt: toIso(row.rejected_at),
-    credentialsSentAt: toIso(row.credentials_sent_at),
-  }
-}
-
 function createWhatsAppStatus(status, text, extra = {}) {
   return { status, text, ...extra }
-}
-
-function createMailStatus(status, text, extra = {}) {
-  return { status, text, ...extra }
-}
-
-function isMailConfigured() {
-  return Boolean(mailWebhookUrl || (smtpHost && mailFrom))
-}
-
-async function createMailTransport(options = {}) {
-  if (!isMailConfigured()) return null
-
-  const host = options.host ?? smtpHost
-  const port = Number(options.port ?? smtpPort)
-  const secure = options.secure ?? smtpSecure
-  const family = smtpFamily === 6 ? 6 : 4
-  const resolvedHost = family === 4 && !/^\d+\.\d+\.\d+\.\d+$/.test(host)
-    ? (await dns.resolve4(host))[0] ?? host
-    : host
-
-  return nodemailer.createTransport({
-    host: resolvedHost,
-    port: Number.isFinite(port) ? port : 587,
-    secure,
-    requireTLS: options.requireTLS ?? (!secure && port === 587),
-    family,
-    connectionTimeout: Number(process.env.SMTP_CONNECTION_TIMEOUT_MS ?? 10000),
-    greetingTimeout: Number(process.env.SMTP_GREETING_TIMEOUT_MS ?? 10000),
-    socketTimeout: Number(process.env.SMTP_SOCKET_TIMEOUT_MS ?? 15000),
-    servername: host,
-    tls: { servername: host },
-    auth: smtpUser || smtpPass ? { user: smtpUser, pass: smtpPass } : undefined,
-  })
-}
-
-function getMailTransportAttempts() {
-  const attempts = [{ host: smtpHost, port: smtpPort, secure: smtpSecure }]
-  if (smtpHost === 'smtp.gmail.com' && smtpPort !== 587) {
-    attempts.push({ host: smtpHost, port: 587, secure: false, requireTLS: true })
-  }
-
-  return attempts
-}
-
-function withTimeout(promise, timeoutMs, message) {
-  let timeout
-  const timeoutPromise = new Promise((_, reject) => {
-    timeout = setTimeout(() => reject(new Error(message)), timeoutMs)
-  })
-
-  return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeout))
-}
-
-function escapeHtml(value) {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-}
-
-async function sendMail({ to, subject, text, html }) {
-  if (!isMailConfigured()) {
-    return createMailStatus('skipped', 'שליחת מייל לא מוגדרת בשרת')
-  }
-
-  if (!to) {
-    return createMailStatus('skipped', 'לא הוגדרה כתובת מייל לשליחה')
-  }
-
-  if (mailWebhookUrl) {
-    return sendMailWebhook({ to, subject, text, html })
-  }
-
-  return sendSmtpMail({ to, subject, text, html })
-}
-
-async function sendMailWebhook({ to, subject, text, html }) {
-  const timeoutMs = Number(process.env.MAIL_WEBHOOK_TIMEOUT_MS ?? 12000)
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), timeoutMs)
-
-  try {
-    const response = await fetch(mailWebhookUrl, {
-      method: 'POST',
-      signal: controller.signal,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        secret: mailWebhookSecret,
-        from: mailFrom,
-        to,
-        subject,
-        text,
-        html,
-      }),
-    })
-    const data = await response.json().catch(() => ({}))
-
-    if (!response.ok || data.ok === false) {
-      throw new Error(data.error || `mail webhook failed with ${response.status}`)
-    }
-
-    return createMailStatus('sent', 'המייל נשלח', { messageId: data.messageId ?? '' })
-  } catch (error) {
-    return createMailStatus(
-      'failed',
-      error.name === 'AbortError'
-        ? `שליחת המייל נכשלה: webhook timed out after ${timeoutMs}ms`
-        : `שליחת המייל נכשלה: ${error.message}`,
-    )
-  } finally {
-    clearTimeout(timeout)
-  }
-}
-
-async function sendSmtpMail({ to, subject, text, html }) {
-  let transport = null
-  let lastError = null
-  try {
-    const sendTimeoutMs = Number(process.env.SMTP_SEND_TIMEOUT_MS ?? 12000)
-    let info = null
-
-    for (const attempt of getMailTransportAttempts()) {
-      try {
-        info = await withTimeout((async () => {
-          transport = await createMailTransport(attempt)
-          return transport.sendMail({
-            from: mailFrom,
-            to,
-            subject,
-            text,
-            html,
-          })
-        })(), sendTimeoutMs, `SMTP timed out after ${sendTimeoutMs}ms`)
-        break
-      } catch (error) {
-        lastError = error
-      } finally {
-        if (transport) {
-          transport.close()
-          transport = null
-        }
-      }
-    }
-
-    if (!info) throw lastError ?? new Error('SMTP send failed')
-
-    return createMailStatus('sent', 'המייל נשלח', { messageId: info.messageId })
-  } catch (error) {
-    return createMailStatus('failed', `שליחת המייל נכשלה: ${error.message}`)
-  } finally {
-    if (transport) {
-      transport.close()
-    }
-  }
-}
-
-function createCredentialLoginUrl(req) {
-  const baseUrl = studentPublicBaseUrl || getRequestBaseUrl(req)
-  return `${baseUrl}/student-login`
-}
-
-async function sendAdminAccessRequestEmail({ accessRequest, approvalUrl }) {
-  const subject = `בקשת גישה חדשה: ${accessRequest.full_name}`
-  const text = [
-    'התקבלה בקשת גישה חדשה לאתר המרתון.',
-    '',
-    `שם מלא: ${accessRequest.full_name}`,
-    `מייל: ${accessRequest.email}`,
-    '',
-    `לאישור הבקשה: ${approvalUrl}`,
-  ].join('\n')
-
-  const html = `
-    <div dir="rtl" style="font-family: Arial, sans-serif; line-height: 1.6; color: #1a1d29;">
-      <h2 style="margin: 0 0 12px;">בקשת גישה חדשה</h2>
-      <p style="margin: 0 0 16px;">סטודנט ביקש לפתוח שם משתמש וסיסמה לאתר המרתון.</p>
-      <p style="margin: 0 0 6px;"><strong>שם מלא:</strong> ${escapeHtml(accessRequest.full_name)}</p>
-      <p style="margin: 0 0 18px;"><strong>מייל:</strong> ${escapeHtml(accessRequest.email)}</p>
-      <p style="margin: 0;">
-        <a href="${escapeHtml(approvalUrl)}" style="display: inline-block; border-radius: 10px; background: #4c57d4; color: #fff; padding: 10px 16px; text-decoration: none; font-weight: 700;">
-          פתיחת מסך אישור
-        </a>
-      </p>
-      <p style="margin: 18px 0 0; color: #565c6e; font-size: 13px;">
-        אם הכפתור לא נפתח, אפשר להעתיק את הקישור: ${escapeHtml(approvalUrl)}
-      </p>
-    </div>
-  `
-
-  return sendMail({
-    to: accessRequestAdminEmail,
-    subject,
-    text,
-    html,
-  })
-}
-
-async function sendStudentCredentialsEmail({ req, student, password }) {
-  const username = student.username || student.phone || student.email
-  const loginUrl = createCredentialLoginUrl(req)
-  const subject = 'פרטי הכניסה שלך לאתר המרתון'
-  const text = [
-    `שלום${student.name ? ` ${student.name}` : ''},`,
-    '',
-    'הגישה שלך לאתר המרתון נפתחה.',
-    `שם משתמש: ${username}`,
-    `סיסמה: ${password}`,
-    '',
-    `כניסה לאתר: ${loginUrl}`,
-  ].join('\n')
-
-  const html = `
-    <div dir="rtl" style="font-family: Arial, sans-serif; line-height: 1.6; color: #1a1d29;">
-      <h2 style="margin: 0 0 12px;">פרטי הכניסה שלך לאתר המרתון</h2>
-      <p style="margin: 0 0 16px;">שלום${student.name ? ` ${escapeHtml(student.name)}` : ''}, הגישה שלך נפתחה.</p>
-      <div dir="ltr" style="display: inline-block; text-align: left; border: 1px solid #e7e9f0; border-radius: 12px; padding: 12px 14px; background: #f7f8fa;">
-        <div><strong>Username:</strong> ${escapeHtml(username)}</div>
-        <div><strong>Password:</strong> ${escapeHtml(password)}</div>
-      </div>
-      <p style="margin: 18px 0 0;">
-        <a href="${escapeHtml(loginUrl)}" style="display: inline-block; border-radius: 10px; background: #4c57d4; color: #fff; padding: 10px 16px; text-decoration: none; font-weight: 700;">
-          כניסה לאתר
-        </a>
-      </p>
-    </div>
-  `
-
-  return sendMail({
-    to: student.email,
-    subject,
-    text,
-    html,
-  })
 }
 
 async function sendCredentialsWhatsApp({ student, password }) {
@@ -1119,13 +787,6 @@ function getPhoneLoginCourseById(courseId, overrides) {
     .find((course) => isPhoneLoginCourse(course) && String(course.id) === normalizedCourseId) ?? null
 }
 
-function getStudentAccessCourseOptions(overrides) {
-  return applyServerCourseOverrides(courses, overrides).map((course) => ({
-    id: String(course.id),
-    label: courseText(course) || String(course.name ?? course.id),
-  }))
-}
-
 async function loadContentOverridesFromDatabase() {
   if (!pool) return {}
 
@@ -1154,8 +815,7 @@ function isPublicStudentApiRequest(req) {
     req.path === '/api/config' ||
     req.path === '/api/courses' ||
     req.path === '/api/student-auth/course-login' ||
-    req.path === '/api/student-auth/logout' ||
-    req.path === '/api/student-access-requests'
+    req.path === '/api/student-auth/logout'
   )
 }
 
@@ -1168,10 +828,6 @@ function isPublicStudentAppShellRequest(req) {
 }
 
 function canServeAnonymousStudentRequest(req) {
-  if (shouldEnforceStudentCourseAccess() && req.path === '/api/student-access-requests') {
-    return true
-  }
-
   return (
     shouldEnforceStudentCourseAccess() &&
     studentPhoneLoginCourseIds.length > 0 &&
@@ -1271,97 +927,52 @@ function sendStudentLoginPage(req, res, redirectPath = null) {
       }
       button:hover { background: var(--primary-hover); }
       button:disabled { cursor: progress; opacity: 0.7; }
-      .divider {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        margin: 26px 0 18px;
-        color: var(--muted);
-        font-size: 12px;
-        font-weight: 700;
-      }
-      .divider::before,
-      .divider::after {
-        content: "";
-        height: 1px;
-        flex: 1;
-        background: var(--border);
-      }
-      .secondary-title {
-        margin: 0 0 6px;
-        font-size: 17px;
-        line-height: 1.35;
-      }
-      .error,
-      .success {
+      .error {
         display: none;
         margin-top: 14px;
+        color: var(--danger);
         font-size: 13px;
         line-height: 1.5;
       }
-      .error { color: var(--danger); }
-      .success { color: #168a4a; }
       .error[data-visible="true"] { display: block; }
-      .success[data-visible="true"] { display: block; }
     </style>
   </head>
   <body>
     <main>
       <h1>כניסה לאתר הסטודנטים</h1>
-      <p>הכניסה היא עם שם המשתמש והסיסמה שנשלחו אליך לאחר אישור הגישה.</p>
-      <form data-login-form>
+      <p>שם המשתמש הוא מספר הטלפון שאיתו נרשמת. הסיסמה ניתנת לאחר פתיחת הגישה.</p>
+      <form>
         <label>
-          שם משתמש
-          <input name="username" autocomplete="username" required autofocus />
+          טלפון
+          <input name="phone" autocomplete="username" inputmode="tel" required autofocus />
         </label>
         <label>
           סיסמה
           <input name="password" type="password" autocomplete="current-password" required />
         </label>
         <button type="submit">כניסה</button>
-        <div class="error" data-login-error role="alert"></div>
-      </form>
-
-      <div class="divider">בקשת גישה</div>
-      <h2 class="secondary-title">אין לך שם משתמש?</h2>
-      <p>אפשר לשלוח בקשת פתיחת גישה. לאחר אישור, פרטי הכניסה יישלחו אליך במייל.</p>
-      <form data-request-form>
-        <label>
-          שם מלא
-          <input name="fullName" autocomplete="name" required />
-        </label>
-        <label>
-          מייל
-          <input name="email" type="email" autocomplete="email" required />
-        </label>
-        <button type="submit">שליחת בקשה לאישור</button>
-        <div class="success" data-request-success role="status"></div>
-        <div class="error" data-request-error role="alert"></div>
+        <div class="error" role="alert"></div>
       </form>
     </main>
     <script>
       const nextPath = ${htmlJson(nextPath)};
-      const loginForm = document.querySelector('[data-login-form]');
-      const requestForm = document.querySelector('[data-request-form]');
-      const loginButton = loginForm.querySelector('button');
-      const requestButton = requestForm.querySelector('button');
-      const loginError = document.querySelector('[data-login-error]');
-      const requestError = document.querySelector('[data-request-error]');
-      const requestSuccess = document.querySelector('[data-request-success]');
+      const form = document.querySelector('form');
+      const button = document.querySelector('button');
+      const errorBox = document.querySelector('.error');
 
-      loginForm.addEventListener('submit', async (event) => {
+      form.addEventListener('submit', async (event) => {
         event.preventDefault();
-        loginError.dataset.visible = 'false';
-        loginButton.disabled = true;
+        errorBox.dataset.visible = 'false';
+        button.disabled = true;
 
         try {
-          const formData = new FormData(loginForm);
+          const formData = new FormData(form);
           const response = await fetch('/api/student-auth/login', {
             method: 'POST',
             credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              username: String(formData.get('username') || '').trim(),
+              phone: formData.get('phone'),
               password: String(formData.get('password') || '').trim()
             })
           });
@@ -1373,195 +984,12 @@ function sendStudentLoginPage(req, res, redirectPath = null) {
 
           window.location.assign(nextPath);
         } catch (error) {
-          loginError.textContent = error.message;
-          loginError.dataset.visible = 'true';
-          loginButton.disabled = false;
-        }
-      });
-
-      requestForm.addEventListener('submit', async (event) => {
-        event.preventDefault();
-        requestError.dataset.visible = 'false';
-        requestSuccess.dataset.visible = 'false';
-        requestButton.disabled = true;
-
-        try {
-          const formData = new FormData(requestForm);
-          const response = await fetch('/api/student-access-requests', {
-            method: 'POST',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              fullName: String(formData.get('fullName') || '').trim(),
-              email: String(formData.get('email') || '').trim()
-            })
-          });
-
-          const data = await response.json().catch(() => ({}));
-          if (!response.ok) {
-            throw new Error(data.error || 'לא הצלחנו לשלוח את הבקשה. נסה שוב.');
-          }
-
-          requestForm.reset();
-          requestSuccess.textContent = 'הבקשה נשלחה לאישור. לאחר אישור, פרטי הכניסה יישלחו אליך במייל.';
-          requestSuccess.dataset.visible = 'true';
-        } catch (error) {
-          requestError.textContent = error.message;
-          requestError.dataset.visible = 'true';
-        } finally {
-          requestButton.disabled = false;
+          errorBox.textContent = error.message;
+          errorBox.dataset.visible = 'true';
+          button.disabled = false;
         }
       });
     </script>
-  </body>
-</html>`)
-}
-
-function sendAccessRequestApprovalPage(res, { accessRequest, courseOptions, token, result = null }) {
-  const isPending = accessRequest?.status === 'pending'
-  const optionsHtml = courseOptions.map((course) => (
-    `<option value="${escapeHtml(course.id)}">${escapeHtml(course.label)}</option>`
-  )).join('')
-  const statusText = {
-    approved: 'הבקשה כבר אושרה.',
-    rejected: 'הבקשה נדחתה.',
-    pending: '',
-  }[accessRequest?.status] ?? 'סטטוס הבקשה אינו מאפשר פעולה.'
-
-  res.setHeader('Content-Type', 'text/html; charset=utf-8')
-  res.setHeader('Cache-Control', 'no-store')
-  res.send(`<!doctype html>
-<html lang="he" dir="rtl">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>אישור בקשת גישה</title>
-    <style>
-      :root {
-        color-scheme: light;
-        --bg: #f7f8fa;
-        --surface: #ffffff;
-        --text: #1a1d29;
-        --muted: #565c6e;
-        --border: #e7e9f0;
-        --primary: #4c57d4;
-        --danger: #d14343;
-        --success: #168a4a;
-      }
-      * { box-sizing: border-box; }
-      body {
-        margin: 0;
-        min-height: 100vh;
-        display: grid;
-        place-items: center;
-        background: var(--bg);
-        color: var(--text);
-        font-family: Inter, Heebo, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      }
-      main {
-        width: min(100% - 32px, 520px);
-        border: 1px solid var(--border);
-        border-radius: 16px;
-        background: var(--surface);
-        box-shadow: 0 12px 32px rgb(20 23 38 / 0.08), 0 2px 4px rgb(20 23 38 / 0.04);
-        padding: 28px;
-      }
-      h1 { margin: 0 0 8px; font-size: 24px; line-height: 1.25; }
-      p { margin: 0 0 18px; color: var(--muted); line-height: 1.6; }
-      dl {
-        display: grid;
-        grid-template-columns: auto 1fr;
-        gap: 8px 12px;
-        margin: 0 0 20px;
-      }
-      dt { color: var(--muted); font-weight: 700; }
-      dd { margin: 0; direction: ltr; text-align: left; }
-      label {
-        display: block;
-        margin-top: 14px;
-        font-size: 13px;
-        font-weight: 700;
-        color: var(--muted);
-      }
-      select {
-        width: 100%;
-        margin-top: 7px;
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        padding: 12px 13px;
-        font: inherit;
-        color: var(--text);
-        background: #fff;
-        outline: none;
-      }
-      .actions {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 10px;
-        margin-top: 22px;
-      }
-      button {
-        width: 100%;
-        border: 0;
-        border-radius: 12px;
-        color: #fff;
-        padding: 12px 16px;
-        font: inherit;
-        font-weight: 700;
-        cursor: pointer;
-      }
-      .approve { background: var(--primary); }
-      .reject { background: var(--danger); }
-      .notice {
-        border-radius: 12px;
-        margin: 0 0 18px;
-        padding: 12px 14px;
-        font-size: 14px;
-        line-height: 1.6;
-      }
-      .notice.success { color: var(--success); background: #eaf7ef; }
-      .notice.error { color: var(--danger); background: #fdecec; }
-      .credentials {
-        direction: ltr;
-        text-align: left;
-        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      }
-    </style>
-  </head>
-  <body>
-    <main>
-      <h1>אישור בקשת גישה</h1>
-      ${result ? `<div class="notice ${result.type}">${escapeHtml(result.text)}</div>` : ''}
-      <dl>
-        <dt>שם</dt>
-        <dd dir="rtl" style="text-align: right;">${escapeHtml(accessRequest.full_name)}</dd>
-        <dt>מייל</dt>
-        <dd>${escapeHtml(accessRequest.email)}</dd>
-        <dt>סטטוס</dt>
-        <dd dir="rtl" style="text-align: right;">${escapeHtml(accessRequest.status)}</dd>
-      </dl>
-      ${isPending ? `
-        <form method="post" action="/student-access-requests/${encodeURIComponent(accessRequest.id)}/approve">
-          <input type="hidden" name="token" value="${escapeHtml(token)}" />
-          <label>
-            קורס לפתיחת גישה
-            <select name="courseId" required>
-              ${optionsHtml}
-            </select>
-          </label>
-          <div class="actions">
-            <button class="approve" type="submit">אישור ויצירת משתמש</button>
-            <button class="reject" type="submit" formaction="/student-access-requests/${encodeURIComponent(accessRequest.id)}/reject">דחייה</button>
-          </div>
-        </form>
-      ` : `<p>${escapeHtml(statusText)}</p>`}
-      ${result?.credentials ? `
-        <p class="credentials">
-          Username: ${escapeHtml(result.credentials.username)}<br />
-          Password: ${escapeHtml(result.credentials.password)}
-        </p>
-      ` : ''}
-    </main>
   </body>
 </html>`)
 }
@@ -1575,26 +1003,9 @@ function deletedMaterialKey({ courseId, meetingId, category, materialId }) {
 }
 
 function publicUrl(req, pathname) {
-  return `${getRequestBaseUrl(req)}${pathname}`
-}
-
-function getRequestBaseUrl(req) {
   const proto = req.headers['x-forwarded-proto'] ?? req.protocol
   const host = req.headers['x-forwarded-host'] ?? req.headers.host
-  return `${proto}://${host}`
-}
-
-function createAccessRequestApprovalUrl(req, accessRequestId, token) {
-  const baseUrl = accessRequestAdminBaseUrl || getRequestBaseUrl(req)
-  return `${baseUrl}/student-access-requests/${encodeURIComponent(accessRequestId)}/approve?token=${encodeURIComponent(token)}`
-}
-
-function getAccessRequestToken(req) {
-  return String(req.query?.token ?? req.body?.token ?? '').trim()
-}
-
-function hasValidAccessRequestToken(row, token) {
-  return Boolean(token && row?.admin_token_hash && safeEqualString(row.admin_token_hash, hashAccessRequestToken(token)))
+  return `${proto}://${host}${pathname}`
 }
 
 function encodePathPart(value) {
@@ -1635,7 +1046,7 @@ async function getAuthenticatedStudent(req) {
   const result = await pool.query(
     `SELECT sessions.id AS session_id, sessions.ip_address AS session_ip_address,
             sessions.user_agent AS session_user_agent,
-            students.id, students.phone, students.username, students.email, students.name, students.active,
+            students.id, students.phone, students.name, students.active,
             students.course_ids,
             students.locked_device_id, students.locked_device_at,
             students.locked_device_ip_address, students.locked_device_user_agent,
@@ -1734,214 +1145,6 @@ function requireBasicAuth(req, res, next) {
 
   res.setHeader('WWW-Authenticate', 'Basic realm="Marathon Admin"')
   res.status(401).send('Authentication required')
-}
-
-async function loadAccessRequest(accessRequestId, executor = pool, options = {}) {
-  const result = await executor.query(
-    `SELECT id, full_name, email, status, admin_token_hash, student_id,
-            request_ip_address, request_user_agent,
-            created_at, updated_at, notified_at, approved_at, rejected_at, credentials_sent_at
-     FROM marathon_student_access_requests
-     WHERE id = $1
-     ${options.forUpdate ? 'FOR UPDATE' : ''}`,
-    [accessRequestId],
-  )
-
-  return result.rows[0] ?? null
-}
-
-async function approveAccessRequest(req, { accessRequestId, token, courseIds }) {
-  const normalizedCourseIds = normalizeCourseIds(courseIds)
-  if (normalizedCourseIds.length === 0) {
-    return { statusCode: 400, error: 'יש לבחור קורס לפתיחת הגישה' }
-  }
-
-  const courseOptions = getStudentAccessCourseOptions(await loadContentOverridesFromDatabase())
-  const allowedCourseIds = new Set(courseOptions.map((course) => course.id))
-  if (!normalizedCourseIds.every((courseId) => allowedCourseIds.has(courseId))) {
-    return { statusCode: 400, error: 'הקורס שנבחר לא נמצא' }
-  }
-
-  const password = generatePassword()
-  const passwordHash = await hashPassword(password)
-  const client = await pool.connect()
-  let student
-  let accessRequest
-
-  try {
-    await client.query('BEGIN')
-    accessRequest = await loadAccessRequest(accessRequestId, client, { forUpdate: true })
-
-    if (!accessRequest) {
-      await client.query('ROLLBACK')
-      return { statusCode: 404, error: 'בקשת הגישה לא נמצאה' }
-    }
-
-    if (!isAdminService && !hasValidAccessRequestToken(accessRequest, token)) {
-      await client.query('ROLLBACK')
-      return { statusCode: 403, error: 'קישור האישור אינו תקין' }
-    }
-
-    if (accessRequest.status !== 'pending') {
-      await client.query('ROLLBACK')
-      return { statusCode: 409, error: 'הבקשה כבר טופלה', accessRequest: serializeAccessRequest(accessRequest) }
-    }
-
-    const existingStudent = await client.query(
-      `SELECT id, username
-       FROM marathon_students
-       WHERE lower(email) = lower($1)
-       LIMIT 1`,
-      [accessRequest.email],
-    )
-
-    if (existingStudent.rowCount > 0) {
-      const username = existingStudent.rows[0].username || await generateUniqueUsername(client, accessRequest.email)
-      const result = await client.query(
-        `UPDATE marathon_students
-         SET username = $2,
-             email = $3,
-             name = $4,
-             password_hash = $5,
-             active = true,
-             course_ids = $6::jsonb,
-             locked_device_id = '',
-             locked_device_at = NULL,
-             locked_device_ip_address = '',
-             locked_device_user_agent = '',
-             last_denied_ip_address = '',
-             last_denied_user_agent = '',
-             last_denied_at = NULL,
-             updated_at = now()
-         WHERE id = $1
-         RETURNING id, phone, username, email, name, active,
-                   course_ids,
-                   locked_device_id, locked_device_at, locked_device_ip_address, locked_device_user_agent,
-                   last_denied_ip_address, last_denied_user_agent, last_denied_at,
-                   created_at, updated_at, last_login_at,
-                   0 AS active_session_count`,
-        [
-          existingStudent.rows[0].id,
-          username,
-          accessRequest.email,
-          accessRequest.full_name,
-          passwordHash,
-          JSON.stringify(normalizedCourseIds),
-        ],
-      )
-      student = result.rows[0]
-      await client.query('DELETE FROM marathon_student_sessions WHERE student_id = $1', [student.id])
-    } else {
-      const username = await generateUniqueUsername(client, accessRequest.email)
-      const result = await client.query(
-        `INSERT INTO marathon_students (id, phone, username, email, name, password_hash, active, course_ids)
-         VALUES ($1, NULL, $2, $3, $4, $5, true, $6::jsonb)
-         RETURNING id, phone, username, email, name, active,
-                   course_ids,
-                   locked_device_id, locked_device_at, locked_device_ip_address, locked_device_user_agent,
-                   last_denied_ip_address, last_denied_user_agent, last_denied_at,
-                   created_at, updated_at, last_login_at,
-                   0 AS active_session_count`,
-        [
-          createId(),
-          username,
-          accessRequest.email,
-          accessRequest.full_name,
-          passwordHash,
-          JSON.stringify(normalizedCourseIds),
-        ],
-      )
-      student = result.rows[0]
-    }
-
-    const updatedRequest = await client.query(
-      `UPDATE marathon_student_access_requests
-       SET status = 'approved',
-           student_id = $2,
-           approved_at = now(),
-           updated_at = now()
-       WHERE id = $1
-       RETURNING id, full_name, email, status, admin_token_hash, student_id,
-                 request_ip_address, request_user_agent,
-                 created_at, updated_at, notified_at, approved_at, rejected_at, credentials_sent_at`,
-      [accessRequest.id, student.id],
-    )
-    accessRequest = updatedRequest.rows[0]
-
-    await client.query('COMMIT')
-  } catch (error) {
-    await client.query('ROLLBACK').catch(() => {})
-    throw error
-  } finally {
-    client.release()
-  }
-
-  const mail = await sendStudentCredentialsEmail({ req, student, password })
-  if (mail.status === 'sent') {
-    const updatedRequest = await pool.query(
-      `UPDATE marathon_student_access_requests
-       SET credentials_sent_at = now(), updated_at = now()
-       WHERE id = $1
-       RETURNING id, full_name, email, status, admin_token_hash, student_id,
-                 request_ip_address, request_user_agent,
-                 created_at, updated_at, notified_at, approved_at, rejected_at, credentials_sent_at`,
-      [accessRequest.id],
-    )
-    accessRequest = updatedRequest.rows[0] ?? accessRequest
-  }
-
-  return {
-    statusCode: 200,
-    accessRequest: serializeAccessRequest(accessRequest),
-    student: serializeStudent(student),
-    username: student.username || student.email,
-    password,
-    mail,
-  }
-}
-
-async function rejectAccessRequest({ accessRequestId, token }) {
-  const client = await pool.connect()
-
-  try {
-    await client.query('BEGIN')
-    const accessRequest = await loadAccessRequest(accessRequestId, client, { forUpdate: true })
-
-    if (!accessRequest) {
-      await client.query('ROLLBACK')
-      return { statusCode: 404, error: 'בקשת הגישה לא נמצאה' }
-    }
-
-    if (!isAdminService && !hasValidAccessRequestToken(accessRequest, token)) {
-      await client.query('ROLLBACK')
-      return { statusCode: 403, error: 'קישור הדחייה אינו תקין' }
-    }
-
-    if (accessRequest.status !== 'pending') {
-      await client.query('ROLLBACK')
-      return { statusCode: 409, error: 'הבקשה כבר טופלה', accessRequest: serializeAccessRequest(accessRequest) }
-    }
-
-    const result = await client.query(
-      `UPDATE marathon_student_access_requests
-       SET status = 'rejected',
-           rejected_at = now(),
-           updated_at = now()
-       WHERE id = $1
-       RETURNING id, full_name, email, status, admin_token_hash, student_id,
-                 request_ip_address, request_user_agent,
-                 created_at, updated_at, notified_at, approved_at, rejected_at, credentials_sent_at`,
-      [accessRequestId],
-    )
-
-    await client.query('COMMIT')
-    return { statusCode: 200, accessRequest: serializeAccessRequest(result.rows[0]) }
-  } catch (error) {
-    await client.query('ROLLBACK').catch(() => {})
-    throw error
-  } finally {
-    client.release()
-  }
 }
 
 async function ensureDb() {
@@ -2063,9 +1266,7 @@ async function ensureDb() {
 
         CREATE TABLE IF NOT EXISTS marathon_students (
           id text PRIMARY KEY,
-          phone text UNIQUE,
-          username text NOT NULL DEFAULT '',
-          email text NOT NULL DEFAULT '',
+          phone text NOT NULL UNIQUE,
           name text NOT NULL DEFAULT '',
           password_hash text NOT NULL,
           active boolean NOT NULL DEFAULT true,
@@ -2081,19 +1282,6 @@ async function ensureDb() {
           updated_at timestamptz NOT NULL DEFAULT now(),
           last_login_at timestamptz
         );
-
-        ALTER TABLE marathon_students
-          ALTER COLUMN phone DROP NOT NULL;
-
-        ALTER TABLE marathon_students
-          ADD COLUMN IF NOT EXISTS username text NOT NULL DEFAULT '';
-
-        ALTER TABLE marathon_students
-          ADD COLUMN IF NOT EXISTS email text NOT NULL DEFAULT '';
-
-        UPDATE marathon_students
-          SET username = phone
-          WHERE (username IS NULL OR username = '') AND phone IS NOT NULL AND phone <> '';
 
         ALTER TABLE marathon_students
           ADD COLUMN IF NOT EXISTS locked_device_id text NOT NULL DEFAULT '';
@@ -2119,40 +1307,8 @@ async function ensureDb() {
         CREATE INDEX IF NOT EXISTS marathon_students_active_idx
           ON marathon_students (active);
 
-        CREATE UNIQUE INDEX IF NOT EXISTS marathon_students_username_unique_idx
-          ON marathon_students (lower(username))
-          WHERE username <> '';
-
-        CREATE UNIQUE INDEX IF NOT EXISTS marathon_students_email_unique_idx
-          ON marathon_students (lower(email))
-          WHERE email <> '';
-
         ALTER TABLE marathon_students
           ADD COLUMN IF NOT EXISTS course_ids jsonb NOT NULL DEFAULT '[]'::jsonb;
-
-        CREATE TABLE IF NOT EXISTS marathon_student_access_requests (
-          id text PRIMARY KEY,
-          full_name text NOT NULL,
-          email text NOT NULL,
-          status text NOT NULL DEFAULT 'pending',
-          admin_token_hash text NOT NULL,
-          student_id text REFERENCES marathon_students(id) ON DELETE SET NULL,
-          request_ip_address text NOT NULL DEFAULT '',
-          request_user_agent text NOT NULL DEFAULT '',
-          created_at timestamptz NOT NULL DEFAULT now(),
-          updated_at timestamptz NOT NULL DEFAULT now(),
-          notified_at timestamptz,
-          approved_at timestamptz,
-          rejected_at timestamptz,
-          credentials_sent_at timestamptz
-        );
-
-        CREATE INDEX IF NOT EXISTS marathon_student_access_requests_status_idx
-          ON marathon_student_access_requests (status, created_at DESC);
-
-        CREATE UNIQUE INDEX IF NOT EXISTS marathon_student_access_requests_pending_email_idx
-          ON marathon_student_access_requests (lower(email))
-          WHERE status = 'pending';
 
         CREATE TABLE IF NOT EXISTS marathon_student_sessions (
           id text PRIMARY KEY,
@@ -2397,7 +1553,6 @@ app.get('/api/health', (_req, res) => {
 
 app.use(requireBasicAuth)
 app.use(express.json({ limit: '5mb' }))
-app.use(express.urlencoded({ extended: false }))
 
 app.get('/student-login', (req, res) => {
   if (!isStudentAuthRequired()) {
@@ -2456,40 +1611,37 @@ app.post('/api/student-auth/login', requireDatabase, asyncHandler(async (req, re
   }
 
   await ensureDb()
-  const login = normalizeLoginIdentifier(req.body?.username ?? req.body?.phone)
+  const phone = normalizePhone(req.body?.phone)
   const password = String(req.body?.password ?? '').trim()
-  const maskedLogin = login.phone ? maskPhoneForLog(login.phone) : login.username.replace(/^(.{2}).+(@?.{2})$/, '$1***$2')
+  const maskedPhone = maskPhoneForLog(phone)
 
-  if (!login.username || !password) {
+  if (!isValidPhone(phone) || !password) {
     console.warn('[student-auth/login] rejected', {
-      login: maskedLogin,
+      phone: maskedPhone,
       reason: 'invalid_input',
       hasPassword: Boolean(password),
     })
-    res.status(400).json({ error: 'יש להזין שם משתמש וסיסמה תקינים' })
+    res.status(400).json({ error: 'יש להזין טלפון וסיסמה תקינים' })
     return
   }
 
   const result = await pool.query(
-    `SELECT id, phone, username, email, name, active, password_hash,
+    `SELECT id, phone, name, active, password_hash,
             course_ids,
             locked_device_id, locked_device_at, locked_device_ip_address, locked_device_user_agent,
             last_denied_ip_address, last_denied_user_agent, last_denied_at,
             created_at, updated_at, last_login_at
      FROM marathon_students
-     WHERE lower(username) = lower($1)
-        OR ($2 <> '' AND phone = $2)
-        OR ($3 <> '' AND lower(email) = lower($3))
-     LIMIT 1`,
-    [login.username, login.phone, normalizeEmail(login.raw)],
+     WHERE phone = $1`,
+    [phone],
   )
 
   if (result.rowCount === 0 || !result.rows[0].active) {
     console.warn('[student-auth/login] rejected', {
-      login: maskedLogin,
+      phone: maskedPhone,
       reason: result.rowCount === 0 ? 'student_not_found' : 'student_inactive',
     })
-    res.status(401).json({ error: 'שם משתמש או סיסמה שגויים' })
+    res.status(401).json({ error: 'טלפון או סיסמה שגויים' })
     return
   }
 
@@ -2497,11 +1649,11 @@ app.post('/api/student-auth/login', requireDatabase, asyncHandler(async (req, re
   const isPasswordValid = await verifyPassword(password, studentRow.password_hash)
   if (!isPasswordValid) {
     console.warn('[student-auth/login] rejected', {
-      login: maskedLogin,
+      phone: maskedPhone,
       reason: 'password_mismatch',
       courseIds: normalizeCourseIds(studentRow.course_ids),
     })
-    res.status(401).json({ error: 'שם משתמש או סיסמה שגויים' })
+    res.status(401).json({ error: 'טלפון או סיסמה שגויים' })
     return
   }
 
@@ -2534,7 +1686,7 @@ app.post('/api/student-auth/login', requireDatabase, asyncHandler(async (req, re
            last_denied_at = NULL,
            updated_at = now()
        WHERE id = $1
-       RETURNING id, phone, username, email, name, active,
+       RETURNING id, phone, name, active,
                  course_ids,
                  locked_device_id, locked_device_at, locked_device_ip_address, locked_device_user_agent,
                  last_denied_ip_address, last_denied_user_agent, last_denied_at,
@@ -2547,7 +1699,7 @@ app.post('/api/student-auth/login', requireDatabase, asyncHandler(async (req, re
     clearStudentPhoneAccessCookie(req, res)
     setStudentSessionCookie(req, res, token, expiresAt)
     console.info('[student-auth/login] accepted', {
-      login: maskedLogin,
+      phone: maskedPhone,
       courseIds: normalizeCourseIds(updatedStudent.rows[0].course_ids),
     })
     res.json({ student: serializeStudent(updatedStudent.rows[0]) })
@@ -2613,239 +1765,10 @@ app.get('/api/student-auth/me', asyncHandler(async (req, res) => {
   })
 }))
 
-app.post('/api/student-access-requests', requireDatabase, asyncHandler(async (req, res) => {
-  await ensureDb()
-
-  const fullName = String(req.body?.fullName ?? req.body?.full_name ?? '').trim()
-  const email = normalizeEmail(req.body?.email)
-
-  if (fullName.length < 2) {
-    res.status(400).json({ error: 'יש להזין שם מלא' })
-    return
-  }
-
-  if (!isValidEmail(email)) {
-    res.status(400).json({ error: 'יש להזין כתובת מייל תקינה' })
-    return
-  }
-
-  const token = randomBytes(32).toString('base64url')
-  const tokenHash = hashAccessRequestToken(token)
-  const client = await pool.connect()
-  let accessRequest
-
-  try {
-    await client.query('BEGIN')
-    const existingRequest = await client.query(
-      `SELECT id
-       FROM marathon_student_access_requests
-       WHERE lower(email) = lower($1) AND status = 'pending'
-       LIMIT 1
-       FOR UPDATE`,
-      [email],
-    )
-
-    if (existingRequest.rowCount > 0) {
-      const result = await client.query(
-        `UPDATE marathon_student_access_requests
-         SET full_name = $2,
-             admin_token_hash = $3,
-             request_ip_address = $4,
-             request_user_agent = $5,
-             updated_at = now()
-         WHERE id = $1
-         RETURNING id, full_name, email, status, admin_token_hash, student_id,
-                   request_ip_address, request_user_agent,
-                   created_at, updated_at, notified_at, approved_at, rejected_at, credentials_sent_at`,
-        [
-          existingRequest.rows[0].id,
-          fullName,
-          tokenHash,
-          requestIp(req),
-          requestUserAgent(req),
-        ],
-      )
-      accessRequest = result.rows[0]
-    } else {
-      const result = await client.query(
-        `INSERT INTO marathon_student_access_requests
-           (id, full_name, email, status, admin_token_hash, request_ip_address, request_user_agent)
-         VALUES ($1, $2, $3, 'pending', $4, $5, $6)
-         RETURNING id, full_name, email, status, admin_token_hash, student_id,
-                   request_ip_address, request_user_agent,
-                   created_at, updated_at, notified_at, approved_at, rejected_at, credentials_sent_at`,
-        [
-          createId(),
-          fullName,
-          email,
-          tokenHash,
-          requestIp(req),
-          requestUserAgent(req),
-        ],
-      )
-      accessRequest = result.rows[0]
-    }
-
-    await client.query('COMMIT')
-  } catch (error) {
-    await client.query('ROLLBACK').catch(() => {})
-    if (error.code === '23505') {
-      res.status(409).json({ error: 'כבר קיימת בקשה ממתינה עבור כתובת המייל הזו' })
-      return
-    }
-    throw error
-  } finally {
-    client.release()
-  }
-
-  const approvalUrl = createAccessRequestApprovalUrl(req, accessRequest.id, token)
-  const notification = await sendAdminAccessRequestEmail({ accessRequest, approvalUrl })
-
-  if (notification.status === 'sent') {
-    const updatedRequest = await pool.query(
-      `UPDATE marathon_student_access_requests
-       SET notified_at = now(), updated_at = now()
-       WHERE id = $1
-       RETURNING id, full_name, email, status, admin_token_hash, student_id,
-                 request_ip_address, request_user_agent,
-                 created_at, updated_at, notified_at, approved_at, rejected_at, credentials_sent_at`,
-      [accessRequest.id],
-    )
-    accessRequest = updatedRequest.rows[0] ?? accessRequest
-  }
-
-  res.status(201).json({
-    request: serializeAccessRequest(accessRequest),
-    notification,
-  })
-}))
-
-app.get('/api/student-access-requests', requireDatabase, requireAdmin, asyncHandler(async (_req, res) => {
-  await ensureDb()
-  const result = await pool.query(
-    `SELECT id, full_name, email, status, admin_token_hash, student_id,
-            request_ip_address, request_user_agent,
-            created_at, updated_at, notified_at, approved_at, rejected_at, credentials_sent_at
-     FROM marathon_student_access_requests
-     ORDER BY
-       CASE status WHEN 'pending' THEN 0 WHEN 'approved' THEN 1 ELSE 2 END,
-       created_at DESC
-     LIMIT 100`,
-  )
-
-  res.json({ requests: result.rows.map((row) => serializeAccessRequest(row)) })
-}))
-
-app.get('/student-access-requests/:id/approve', requireDatabase, asyncHandler(async (req, res) => {
-  await ensureDb()
-  const accessRequest = await loadAccessRequest(req.params.id)
-  const token = getAccessRequestToken(req)
-
-  if (!accessRequest) {
-    res.status(404).send('בקשת הגישה לא נמצאה')
-    return
-  }
-
-  if (!isAdminService && !hasValidAccessRequestToken(accessRequest, token)) {
-    res.status(403).send('קישור האישור אינו תקין')
-    return
-  }
-
-  const courseOptions = getStudentAccessCourseOptions(await loadContentOverridesFromDatabase())
-  sendAccessRequestApprovalPage(res, { accessRequest, courseOptions, token })
-}))
-
-async function handleApproveAccessRequestRoute(req, res) {
-  await ensureDb()
-  const token = getAccessRequestToken(req)
-  const courseIds = normalizeCourseIds(req.body?.courseIds ?? req.body?.courseId)
-  const result = await approveAccessRequest(req, {
-    accessRequestId: req.params.id,
-    token,
-    courseIds,
-  })
-
-  if (req.is('application/x-www-form-urlencoded')) {
-    const accessRequest = await loadAccessRequest(req.params.id)
-    if (!accessRequest) {
-      res.status(result.statusCode ?? 404).send(result.error ?? 'בקשת הגישה לא נמצאה')
-      return
-    }
-
-    const courseOptions = getStudentAccessCourseOptions(await loadContentOverridesFromDatabase())
-    sendAccessRequestApprovalPage(res, {
-      accessRequest,
-      courseOptions,
-      token,
-      result: result.error
-        ? { type: 'error', text: result.error }
-        : {
-            type: result.mail.status === 'sent' ? 'success' : 'error',
-            text: result.mail.status === 'sent'
-              ? 'המשתמש נוצר ופרטי הכניסה נשלחו לסטודנט במייל.'
-              : `המשתמש נוצר, אבל ${result.mail.text}`,
-            credentials: result.mail.status === 'sent' ? null : {
-              username: result.username,
-              password: result.password,
-            },
-          },
-    })
-    return
-  }
-
-  if (result.error) {
-    res.status(result.statusCode).json({ error: result.error, request: result.accessRequest })
-    return
-  }
-
-  res.json(result)
-}
-
-app.post('/student-access-requests/:id/approve', requireDatabase, asyncHandler(handleApproveAccessRequestRoute))
-app.post('/api/student-access-requests/:id/approve', requireDatabase, asyncHandler(handleApproveAccessRequestRoute))
-
-async function handleRejectAccessRequestRoute(req, res) {
-  await ensureDb()
-  const token = getAccessRequestToken(req)
-  const result = await rejectAccessRequest({
-    accessRequestId: req.params.id,
-    token,
-  })
-
-  if (req.is('application/x-www-form-urlencoded')) {
-    const accessRequest = await loadAccessRequest(req.params.id)
-    if (!accessRequest) {
-      res.status(result.statusCode ?? 404).send(result.error ?? 'בקשת הגישה לא נמצאה')
-      return
-    }
-
-    const courseOptions = getStudentAccessCourseOptions(await loadContentOverridesFromDatabase())
-    sendAccessRequestApprovalPage(res, {
-      accessRequest,
-      courseOptions,
-      token,
-      result: result.error
-        ? { type: 'error', text: result.error }
-        : { type: 'success', text: 'הבקשה נדחתה.' },
-    })
-    return
-  }
-
-  if (result.error) {
-    res.status(result.statusCode).json({ error: result.error, request: result.accessRequest })
-    return
-  }
-
-  res.json(result)
-}
-
-app.post('/student-access-requests/:id/reject', requireDatabase, asyncHandler(handleRejectAccessRequestRoute))
-app.post('/api/student-access-requests/:id/reject', requireDatabase, asyncHandler(handleRejectAccessRequestRoute))
-
 app.get('/api/students', requireDatabase, requireAdmin, asyncHandler(async (_req, res) => {
   await ensureDb()
   const result = await pool.query(
-    `SELECT students.id, students.phone, students.username, students.email, students.name, students.active,
+    `SELECT students.id, students.phone, students.name, students.active,
             students.course_ids,
             students.locked_device_id, students.locked_device_at,
             students.locked_device_ip_address, students.locked_device_user_agent,
@@ -2865,7 +1788,6 @@ app.post('/api/students', requireDatabase, requireAdmin, asyncHandler(async (req
   await ensureDb()
   const phone = normalizePhone(req.body?.phone)
   const name = String(req.body?.name ?? '').trim()
-  const email = normalizeEmail(req.body?.email)
   const courseIds = normalizeCourseIds(req.body?.courseIds)
   const requestedPassword = String(req.body?.password ?? '').trim()
   const password = requestedPassword || generatePassword()
@@ -2883,12 +1805,6 @@ app.post('/api/students', requireDatabase, requireAdmin, asyncHandler(async (req
     return
   }
 
-  if (email && !isValidEmail(email)) {
-    console.warn('[students/create] rejected', { phone: maskedPhone, reason: 'invalid_email' })
-    res.status(400).json({ error: 'Invalid email address' })
-    return
-  }
-
   if (courseIds.length === 0) {
     console.warn('[students/create] rejected', { phone: maskedPhone, reason: 'missing_course' })
     res.status(400).json({ error: 'Student must be assigned to a course' })
@@ -2903,12 +1819,10 @@ app.post('/api/students', requireDatabase, requireAdmin, asyncHandler(async (req
     await client.query('BEGIN')
 
     const result = await client.query(
-      `INSERT INTO marathon_students (id, phone, username, email, name, password_hash, active, course_ids)
-       VALUES ($1, $2, $2, $3, $4, $5, true, $6::jsonb)
+      `INSERT INTO marathon_students (id, phone, name, password_hash, active, course_ids)
+       VALUES ($1, $2, $3, $4, true, $5::jsonb)
        ON CONFLICT (phone)
        DO UPDATE SET
-         username = CASE WHEN marathon_students.username = '' THEN EXCLUDED.username ELSE marathon_students.username END,
-         email = CASE WHEN EXCLUDED.email <> '' THEN EXCLUDED.email ELSE marathon_students.email END,
          name = CASE WHEN EXCLUDED.name <> '' THEN EXCLUDED.name ELSE marathon_students.name END,
          password_hash = EXCLUDED.password_hash,
          active = true,
@@ -2921,12 +1835,12 @@ app.post('/api/students', requireDatabase, requireAdmin, asyncHandler(async (req
          last_denied_user_agent = '',
          last_denied_at = NULL,
          updated_at = now()
-       RETURNING id, phone, username, email, name, active,
+       RETURNING id, phone, name, active,
                  course_ids,
                  locked_device_id, locked_device_at, locked_device_ip_address, locked_device_user_agent,
                  last_denied_ip_address, last_denied_user_agent, last_denied_at,
                  created_at, updated_at, last_login_at`,
-      [createId(), phone, email, name, passwordHash, JSON.stringify(courseIds)],
+      [createId(), phone, name, passwordHash, JSON.stringify(courseIds)],
     )
 
     await client.query('DELETE FROM marathon_student_sessions WHERE student_id = $1', [result.rows[0].id])
@@ -2971,7 +1885,7 @@ app.patch('/api/students/:id', requireDatabase, requireAdmin, asyncHandler(async
          course_ids = CASE WHEN $5::boolean THEN $6::jsonb ELSE course_ids END,
          updated_at = now()
      WHERE id = $1
-     RETURNING id, phone, username, email, name, active,
+     RETURNING id, phone, name, active,
                course_ids,
                locked_device_id, locked_device_at, locked_device_ip_address, locked_device_user_agent,
                last_denied_ip_address, last_denied_user_agent, last_denied_at,
@@ -2998,7 +1912,7 @@ app.post('/api/students/:id/sessions/revoke', requireDatabase, requireAdmin, asy
     [req.params.id],
   )
   const result = await pool.query(
-    `SELECT id, phone, username, email, name, active,
+    `SELECT id, phone, name, active,
             course_ids,
             locked_device_id, locked_device_at, locked_device_ip_address, locked_device_user_agent,
             last_denied_ip_address, last_denied_user_agent, last_denied_at,
@@ -3037,7 +1951,7 @@ app.post('/api/students/:id/device-lock/reset', requireDatabase, requireAdmin, a
          last_denied_at = NULL,
          updated_at = now()
      WHERE id = $1
-     RETURNING id, phone, username, email, name, active,
+     RETURNING id, phone, name, active,
                course_ids,
                locked_device_id, locked_device_at, locked_device_ip_address, locked_device_user_agent,
                last_denied_ip_address, last_denied_user_agent, last_denied_at,
@@ -3072,7 +1986,7 @@ app.post('/api/students/:id/password', requireDatabase, requireAdmin, asyncHandl
     `UPDATE marathon_students
      SET password_hash = $2, active = true, updated_at = now()
      WHERE id = $1
-     RETURNING id, phone, username, email, name, active,
+     RETURNING id, phone, name, active,
                course_ids,
                locked_device_id, locked_device_at, locked_device_ip_address, locked_device_user_agent,
                last_denied_ip_address, last_denied_user_agent, last_denied_at,
