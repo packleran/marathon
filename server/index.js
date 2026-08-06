@@ -65,6 +65,8 @@ const smtpFamily = Number(process.env.SMTP_FAMILY ?? 4)
 const smtpUser = process.env.SMTP_USER ?? ''
 const smtpPass = process.env.SMTP_PASS ?? ''
 const mailFrom = process.env.MAIL_FROM ?? process.env.SMTP_FROM ?? smtpUser
+const mailWebhookUrl = process.env.MAIL_WEBHOOK_URL ?? ''
+const mailWebhookSecret = process.env.MAIL_WEBHOOK_SECRET ?? ''
 const accessRequestAdminEmail = process.env.ACCESS_REQUEST_ADMIN_EMAIL ?? process.env.ADMIN_EMAIL ?? ''
 const accessRequestAdminBaseUrl = normalizeHttpOrigin(
   process.env.ACCESS_REQUEST_ADMIN_BASE_URL ?? process.env.ADMIN_PUBLIC_URL ?? '',
@@ -643,7 +645,7 @@ function createMailStatus(status, text, extra = {}) {
 }
 
 function isMailConfigured() {
-  return Boolean(smtpHost && mailFrom)
+  return Boolean(mailWebhookUrl || (smtpHost && mailFrom))
 }
 
 async function createMailTransport(options = {}) {
@@ -701,13 +703,59 @@ function escapeHtml(value) {
 
 async function sendMail({ to, subject, text, html }) {
   if (!isMailConfigured()) {
-    return createMailStatus('skipped', 'SMTP לא מוגדר בשרת')
+    return createMailStatus('skipped', 'שליחת מייל לא מוגדרת בשרת')
   }
 
   if (!to) {
     return createMailStatus('skipped', 'לא הוגדרה כתובת מייל לשליחה')
   }
 
+  if (mailWebhookUrl) {
+    return sendMailWebhook({ to, subject, text, html })
+  }
+
+  return sendSmtpMail({ to, subject, text, html })
+}
+
+async function sendMailWebhook({ to, subject, text, html }) {
+  const timeoutMs = Number(process.env.MAIL_WEBHOOK_TIMEOUT_MS ?? 12000)
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
+
+  try {
+    const response = await fetch(mailWebhookUrl, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        secret: mailWebhookSecret,
+        from: mailFrom,
+        to,
+        subject,
+        text,
+        html,
+      }),
+    })
+    const data = await response.json().catch(() => ({}))
+
+    if (!response.ok || data.ok === false) {
+      throw new Error(data.error || `mail webhook failed with ${response.status}`)
+    }
+
+    return createMailStatus('sent', 'המייל נשלח', { messageId: data.messageId ?? '' })
+  } catch (error) {
+    return createMailStatus(
+      'failed',
+      error.name === 'AbortError'
+        ? `שליחת המייל נכשלה: webhook timed out after ${timeoutMs}ms`
+        : `שליחת המייל נכשלה: ${error.message}`,
+    )
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+async function sendSmtpMail({ to, subject, text, html }) {
   let transport = null
   let lastError = null
   try {

@@ -56,12 +56,47 @@ SMTP_SECURE=false
 SMTP_USER=<smtp-user>
 SMTP_PASS=<smtp-password>
 MAIL_FROM="Marathon <no-reply@example.com>"
+MAIL_WEBHOOK_URL=<optional-https-mail-webhook>
+MAIL_WEBHOOK_SECRET=<optional-long-random-secret>
 ACCESS_REQUEST_ADMIN_EMAIL=<your-approval-email>
 ACCESS_REQUEST_ADMIN_BASE_URL=https://<admin-service-domain>
 STUDENT_PUBLIC_BASE_URL=https://<student-service-domain>
 ```
 
-`ACCESS_REQUEST_ADMIN_EMAIL` receives new access requests. `ACCESS_REQUEST_ADMIN_BASE_URL` should point at the admin deployment so approval links open in the protected admin service. `STUDENT_PUBLIC_BASE_URL` is used in the credential email sent to the student. Configure the SMTP and access-request variables on both Railway services: the student service sends the admin approval email, and the admin service sends the approved student's credentials.
+`ACCESS_REQUEST_ADMIN_EMAIL` receives new access requests. `ACCESS_REQUEST_ADMIN_BASE_URL` should point at the admin deployment so approval links open in the protected admin service. `STUDENT_PUBLIC_BASE_URL` is used in the credential email sent to the student. Configure the mail and access-request variables on both Railway services: the student service sends the admin approval email, and the admin service sends the approved student's credentials.
+
+Railway Free/Trial/Hobby plans block outbound SMTP. On those plans, keep the Gmail app password only if you upgrade to Pro. Otherwise use `MAIL_WEBHOOK_URL` over HTTPS. A Google Apps Script web app can send through the Gmail account:
+
+```js
+const SECRET = 'replace-with-the-same-MAIL_WEBHOOK_SECRET'
+
+function doPost(e) {
+  try {
+    const data = JSON.parse(e.postData.contents)
+    if (data.secret !== SECRET) {
+      return json({ ok: false, error: 'unauthorized' }, 401)
+    }
+
+    MailApp.sendEmail({
+      to: data.to,
+      subject: data.subject,
+      body: data.text,
+      htmlBody: data.html,
+      name: 'Marathon',
+    })
+
+    return json({ ok: true })
+  } catch (error) {
+    return json({ ok: false, error: error.message }, 500)
+  }
+}
+
+function json(data, status) {
+  return ContentService
+    .createTextOutput(JSON.stringify(data))
+    .setMimeType(ContentService.MimeType.JSON)
+}
+```
 
 WhatsApp credential messages use the Meta WhatsApp Cloud API and must be sent with an approved template. The default template name is `student_login_details`, with three body variables:
 
@@ -109,6 +144,8 @@ SMTP_SECURE=false
 SMTP_USER=<smtp-user>
 SMTP_PASS=<smtp-password>
 MAIL_FROM="Marathon <no-reply@example.com>"
+MAIL_WEBHOOK_URL=<optional-https-mail-webhook>
+MAIL_WEBHOOK_SECRET=<optional-long-random-secret>
 ACCESS_REQUEST_ADMIN_EMAIL=<your-approval-email>
 ACCESS_REQUEST_ADMIN_BASE_URL=https://<admin-service-domain>
 STUDENT_PUBLIC_BASE_URL=https://<student-service-domain>
